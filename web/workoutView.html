@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Workout View</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</head>
+<body class="bg-light">
+<div class="container py-3">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h5 mb-0">Workout del <span id="lbl-date"></span></h1>
+  </div>
+
+  <div class="mb-3 d-flex gap-2">
+    <button id="btn-start" class="btn btn-success btn-lg flex-fill">Inizia (replica su oggi)</button>
+    <button id="btn-back" class="btn btn-outline-secondary btn-lg flex-fill">Torna</button>
+  </div>
+
+  <div id="msg" class="d-none mb-2"></div>
+
+  <div id="workout-container"></div>
+</div>
+
+<script>
+function getQuery(name) {
+  const p = new URLSearchParams(window.location.search);
+  return p.get(name);
+}
+
+function ensureLogin(cb) {
+  $.getJSON('auth.php?action=me').done(function(res) {
+    if (!res.logged) window.location = 'login.html';
+    else cb(res);
+  });
+}
+
+function renderWorkout(date, items) {
+  $('#workout-container').empty();
+  if (items.length === 0) {
+    $('#workout-container').append('<div class="alert alert-info">Nessun esercizio per questa data.</div>');
+    return;
+  }
+
+  items.forEach(function(it) {
+    var card = $('<div class="card mb-2 shadow-sm">');
+    var body = $('<div class="card-body py-2">');
+    body.append('<strong>' + it.activity + '</strong><br>');
+
+    if (it.pairs && it.pairs.length > 0) {
+      var list = $('<div class="mt-1">');
+      it.pairs.forEach(function(p, idx) {
+        var badge = $('<span class="badge rounded-pill bg-secondary me-1 mb-1">')
+          .text((idx+1) + ') ' + p.reps + 'x' + p.weight);
+        list.append(badge);
+      });
+      body.append(list);
+    } else {
+      body.append('<small class="text-muted">Nessun set registrato.</small>');
+    }
+    card.append(body);
+    $('#workout-container').append(card);
+  });
+}
+
+$(function() {
+  ensureLogin(function() {
+    var date = getQuery('date');
+    if (!date) {
+      $('#msg').removeClass('d-none alert-success').addClass('alert alert-danger').text('Data mancante');
+      return;
+    }
+    $('#lbl-date').text(date);
+
+    $.getJSON('api.php?action=getWorkout&date=' + encodeURIComponent(date))
+      .done(function(res) {
+        renderWorkout(date, res.items || []);
+      });
+
+    $('#btn-back').on('click', function() {
+      window.location = 'workoutList.html';
+    });
+
+    $('#btn-start').on('click', function() {
+      var ref = date.replace(/-/g, '');
+      window.location = 'currentworkout.html?workoutRef=' + encodeURIComponent(ref);
+    });
+  });
+});
+</script>
+</body>
+</html>

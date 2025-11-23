@@ -1,0 +1,10 @@
+{
+  "users": [
+    {
+      "username": "test",
+      "password": "12345",
+      "log_csv": "data/log_test.csv",
+      "workout_routine_csv": "data/workout.csv"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+rowid,workoutid,day,activity,nseries,repetitions,notes,woorder,restpause,woweight
+1,1,1,Distensioni manubri 30,6,1WU 2F 2W 1B,,1,90,0
+2,1,1,Distensioni multipower orizzontale,4,1F 2W 1B,1 rest pause dopo l'ultima Working set,2,90,0
+3,1,1,Croci manubri 30,4,8,4 secondi a scendere,3,60,0
+4,1,1,Croci cavi chiusura centrale,4,10+10,,4,60,0
+5,1,1,Croci cavi dal basso verso l'alto,1,10/12,Una sola serie con 3 drop-set,5,60,0
+6,1,1,DIP,5,Max,,6,60,0
+7,1,1,Alzate laterali parziali,3,10,Non arrivare fino in alto,7,30,0
+8,1,1,Alzate laterali manubri,1,SST,,8,0,0
+9,1,1,Alzate frontali disco,3,10+10,,9,60,0
+10,1,1,Calf,3,30,,10,20,0

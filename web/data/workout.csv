@@ -1,0 +1,36 @@
+rowid,workoutid,day,activity,nseries,repetitions,notes,woorder,restpause,woweight
+1,1,1,Distensioni manubri 30,6,1WU 2F 2W 1B,,1,90,0
+2,1,1,Distensioni multipower orizzontale,4,1F 2W 1B,1 rest pause dopo l'ultima Working set,2,90,0
+3,1,1,Croci manubri 30,4,8,4 secondi a scendere,3,60,0
+4,1,1,Croci cavi chiusura centrale,4,10+10,,4,60,0
+5,1,1,Croci cavi dal basso verso l'alto,1,10/12,Una sola serie con 3 drop-set,5,60,0
+6,1,1,DIP,5,Max,,6,60,0
+7,1,1,Alzate laterali parziali,3,10,Non arrivare fino in alto,7,30,0
+8,1,1,Alzate laterali manubri,1,SST,,8,0,0
+9,1,1,Alzate frontali disco,3,10+10,,9,60,0
+10,1,1,Calf,3,30,,10,20,0
+11,1,2,Lat machine presa larga,6,1WU 2F 2W 1B,,1,90,0
+12,1,2,Rematore 1 manubrio,4,1WU 1F 2W,,2,90,0
+13,1,2,Pullover cavo corda,3,10+10,,3,60,0
+14,1,2,Lat machine triangolo,1,Tra 8 10,Una sola serie con 5 drop set,4,0,0
+15,1,2,Meadows row,2,6 8,inserire un bilanciere all angolo bloccato da un manubrio pesante sopra,5,60,0
+16,1,2,Pulley triangolo,3,12,2 secondi isometria ad ogni ripetizione,6,60,0
+17,1,2,Aperture dietro posteriori manubri,3,30,,7,60,0
+18,1,2,Bic bilanciere angolato,4,2F 2W,,8,60,0
+19,1,2,Curl martello insieme,4,6+6,,9,60,0
+20,1,2,Bic cavo basso asta dritta,1,SST,,10,0,0
+21,1,3,Leg curl sdraiato,5,1WU 2F 1W 1B,dopo l ultima ripetizione 30 secondi isometria, poi MAX,1,60,0
+22,1,3,Squat bilanciere,5,1WU 2F 2W,,2,90,0
+23,1,3,Leg press 45°,4,1F 2W 1B,2 reset dopo l ultima working set,3,90,0
+24,1,3,Bulgarian Squat,3,10+10+10,Al termine dell ultima da 10 restare giu in tensione per MAX,4,60,0
+25,1,3,Leg Ext,4,10+10,,5,60,0
+26,1,3,Stacchi gambe semi tese,3,15,,6,60,0
+27,1,3,Calf,4,30,,7,30,0
+28,1,4,Croci cavi panca 45°,4,10+10,,1,60,0
+29,1,4,Distensioni manubri orizzontale,4,1WU 1F 2W,,2,90,0
+30,1,4,Croci cavi + flessioni piedi su panca,4,12 MAX flessioni,,3,60,0
+31,1,4,Shoulder press,3,1F 2W,,4,60,0
+32,1,4,Alzate laterali,4,8+8,,5,60,0
+33,1,4,Alzate laterali cavi 1braccio,3,15,,6,60,0
+34,1,4,Tric french press 1 manubrio,3,8+8,1 manubrio con 2 mani,7,60,0
+35,1,4,Tric corda,3,12,,8,60,0
