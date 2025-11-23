@@ -61,7 +61,7 @@ function ensureLogCsvExists($logCsvPath)
         $fh = fopen($logCsvPath, 'w');
         if ($fh) {
             // id;date;activity;pairs
-            fputcsv($fh, ['id','date','activity','pairs'], ';');
+            fputcsv($fh, ['id','date','origin_date','activity','pairs','prev_pairs'], ';');
             fclose($fh);
         }
     }

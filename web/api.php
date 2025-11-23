@@ -1,5 +1,13 @@
 <?php
 // api.php
+/*
+0 => id
+1 => date          (data di lavorazione / attuale)
+2 => origin_date   (data da cui è stato generato il workout)
+3 => activity
+4 => pairs         (coppie reps@peso attuali)
+5 => prev_pairs    (coppie reps@peso precedenti, per confronto)
+*/
 header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/common.php';
 
@@ -142,10 +150,14 @@ function handleListLog($logCsv)
     $items = [];
     if (($fh = fopen($logCsv, 'r')) !== false) {
         $header = fgetcsv($fh, 0, ';');
-        while (($row = fgetcsv($fh, 0, ';')) !== false) {
-            if (count($row) < 4) continue;
-            list($id, $date, $activity, $pairsStr) = $row;
-            $pairsHuman = [];
+		while (($row = fgetcsv($fh, 0, ';')) !== false) {
+			if (count($row) < 6) continue;
+			$id        = $row[0];
+			$date      = $row[1];
+			$activity  = $row[3];
+			$pairsStr  = $row[4];
+
+			$pairsHuman = [];
             if ($pairsStr !== '') {
                 $pairs = explode('|', $pairsStr);
                 foreach ($pairs as $p) {
@@ -204,7 +216,7 @@ function handleDeleteLog($logCsv)
         echo json_encode(['error' => 'Cannot write log CSV']);
         return;
     }
-    fputcsv($fh, ['id','date','activity','pairs'], ';');
+    fputcsv($fh, ['id','date','origin_date','activity','pairs','prev_pairs'], ';');
     foreach ($newRows as $r) {
         fputcsv($fh, $r, ';');
     }
@@ -218,9 +230,9 @@ function handleListWorkoutDates($logCsv)
     $dates = [];
     if (($fh = fopen($logCsv, 'r')) !== false) {
         $header = fgetcsv($fh, 0, ';');
-        while (($row = fgetcsv($fh, 0, ';')) !== false) {
-            if (!isset($row[1])) continue;
-            $date = $row[1];
+		while (($row = fgetcsv($fh, 0, ';')) !== false) {
+			if (!isset($row[1])) continue;
+			$date = $row[1];
             if ($date !== '' && !in_array($date, $dates, true)) {
                 $dates[] = $date;
             }
@@ -245,25 +257,33 @@ function handleGetWorkout($logCsv)
     if (($fh = fopen($logCsv, 'r')) !== false) {
         $header = fgetcsv($fh, 0, ';');
         while (($row = fgetcsv($fh, 0, ';')) !== false) {
-            if (count($row) < 4) continue;
-            list($id, $rowDate, $activity, $pairsStr) = $row;
+            if (count($row) < 6) continue;
+            $id          = $row[0];
+            $rowDate     = $row[1];
+            $originDate  = $row[2] ?? $rowDate;
+            $activity    = $row[3];
+            $pairsStr    = $row[4];
+
             if ($rowDate !== $date) continue;
 
             $pairs = [];
             if ($pairsStr !== '') {
                 foreach (explode('|', $pairsStr) as $p) {
-                    $tmp = explode('@', $p);
-                    $reps = isset($tmp[0]) ? (int)$tmp[0] : 0;
+                    $tmp    = explode('@', $p);
+                    $reps   = isset($tmp[0]) ? (int)$tmp[0] : 0;
                     $weight = isset($tmp[1]) ? (float)$tmp[1] : 0;
                     if ($reps > 0) {
                         $pairs[] = ['reps' => $reps, 'weight' => $weight];
                     }
                 }
             }
+
             $items[] = [
-                'id'       => $id,
-                'activity' => $activity,
-                'pairs'    => $pairs
+                'id'          => $id,
+                'activity'    => $activity,
+                'pairs'       => $pairs,
+                // se ti servirà in UI
+                'origin_date' => $originDate
             ];
         }
         fclose($fh);
@@ -271,6 +291,7 @@ function handleGetWorkout($logCsv)
 
     echo json_encode(['items' => $items]);
 }
+
 
 function handleCloneWorkout($logCsv)
 {
@@ -304,32 +325,42 @@ function handleCloneWorkout($logCsv)
     }
 
     $newRows = $rows;
-    foreach ($rows as $row) {
-        if (!isset($row[1]) || $row[1] !== $source) continue;
-        $newId = time() . '_' . mt_rand(1000, 9999);
-        $row[0] = $newId;
-        $row[1] = $target;
-        $newRows[] = $row;
-    }
+	foreach ($rows as $row) {
+		if (!isset($row[1]) || $row[1] !== $source) continue;
 
-    $fh = fopen($logCsv, 'w');
-    if (!$fh) {
-        http_response_code(500);
-        echo json_encode(['error' => 'Cannot write log CSV']);
-        return;
-    }
-    fputcsv($fh, ['id','date','activity','pairs'], ';');
-    foreach ($newRows as $row) {
-        fputcsv($fh, $row, ';');
-    }
-    fclose($fh);
+		// vecchio schema o nuovo: normalizziamo comunque
+		$activity   = $row[3] ?? $row[2];
+		$pairsStr   = $row[4] ?? ($row[3] ?? '');
 
+		$newId      = time() . '_' . mt_rand(1000, 9999);
+		$originDate = $source;
+		$newRows[]  = [
+			$newId,        // id
+			$target,       // date (lavorazione corrente)
+			$originDate,   // origin_date
+			$activity,     // activity
+			'',            // pairs (vuote: le farai oggi)
+			$pairsStr      // prev_pairs (storico da confrontare)
+		];
+	}
+
+	$fh = fopen($logCsv, 'w');
+	if (!$fh) {
+		http_response_code(500);
+		echo json_encode(['error' => 'Cannot write log CSV']);
+		return;
+	}
+	fputcsv($fh, ['id','date','origin_date','activity','pairs','prev_pairs'], ';');
+	foreach ($newRows as $row) {
+		fputcsv($fh, $row, ';');
+	}
+	fclose($fh);
     echo json_encode(['success' => true, 'skipped' => false]);
 }
 
 function handleGetExercise($logCsv)
 {
-    $date = $_GET['date'] ?? '';
+    $date     = $_GET['date'] ?? '';
     $activity = trim($_GET['activity'] ?? '');
     if ($date === '' || $activity === '') {
         http_response_code(400);
@@ -338,23 +369,39 @@ function handleGetExercise($logCsv)
     }
     $date = normalizeDate($date);
 
-    $pairs = [];
-    $id = null;
+    $pairs      = [];
+    $prevPairs  = [];
+    $id         = null;
+    $originDate = $date;
 
     if (($fh = fopen($logCsv, 'r')) !== false) {
         $header = fgetcsv($fh, 0, ';');
         while (($row = fgetcsv($fh, 0, ';')) !== false) {
-            if (count($row) < 4) continue;
-            if ($row[1] === $date && $row[2] === $activity) {
-                $id = $row[0];
-                $pairsStr = $row[3];
+            if (count($row) < 6) continue;
+            if ($row[1] === $date && $row[3] === $activity) {
+                $id         = $row[0];
+                $originDate = $row[2] ?: $date;
+                $pairsStr   = $row[4];
+                $prevStr    = $row[5];
+
                 if ($pairsStr !== '') {
                     foreach (explode('|', $pairsStr) as $p) {
-                        $tmp = explode('@', $p);
-                        $reps = isset($tmp[0]) ? (int)$tmp[0] : 0;
+                        $tmp    = explode('@', $p);
+                        $reps   = isset($tmp[0]) ? (int)$tmp[0] : 0;
                         $weight = isset($tmp[1]) ? (float)$tmp[1] : 0;
                         if ($reps > 0) {
                             $pairs[] = ['reps' => $reps, 'weight' => $weight];
+                        }
+                    }
+                }
+
+                if ($prevStr !== '') {
+                    foreach (explode('|', $prevStr) as $p) {
+                        $tmp    = explode('@', $p);
+                        $reps   = isset($tmp[0]) ? (int)$tmp[0] : 0;
+                        $weight = isset($tmp[1]) ? (float)$tmp[1] : 0;
+                        if ($reps > 0) {
+                            $prevPairs[] = ['reps' => $reps, 'weight' => $weight];
                         }
                     }
                 }
@@ -365,16 +412,19 @@ function handleGetExercise($logCsv)
     }
 
     echo json_encode([
-        'id'       => $id,
-        'date'     => $date,
-        'activity' => $activity,
-        'pairs'    => $pairs
+        'id'          => $id,
+        'date'        => $date,
+        'origin_date' => $originDate,
+        'activity'    => $activity,
+        'pairs'       => $pairs,
+        'prev_pairs'  => $prevPairs
     ]);
 }
 
+
 function handleSaveExercisePairs($logCsv)
 {
-    $date = isset($_POST['date']) ? normalizeDate($_POST['date']) : '';
+    $date     = isset($_POST['date']) ? normalizeDate($_POST['date']) : '';
     $activity = trim($_POST['activity'] ?? '');
     $pairsJson = $_POST['pairs'] ?? '[]';
 
@@ -393,7 +443,7 @@ function handleSaveExercisePairs($logCsv)
 
     $parts = [];
     foreach ($pairsArr as $p) {
-        $reps = isset($p['reps']) ? (int)$p['reps'] : 0;
+        $reps   = isset($p['reps']) ? (int)$p['reps'] : 0;
         $weight = isset($p['weight']) ? (float)$p['weight'] : 0;
         if ($reps > 0) {
             $parts[] = $reps . '@' . $weight;
@@ -401,15 +451,24 @@ function handleSaveExercisePairs($logCsv)
     }
     $pairsStr = implode('|', $parts);
 
-    $rows = [];
+    $rows  = [];
     $found = false;
 
     if (($fh = fopen($logCsv, 'r')) !== false) {
         $header = fgetcsv($fh, 0, ';');
         while (($row = fgetcsv($fh, 0, ';')) !== false) {
-            if ($row[1] === $date && $row[2] === $activity) {
-                $found = true;
-                $row[3] = $pairsStr;
+            if (count($row) < 6) {
+                // upgrade eventuali righe vecchie (4 colonne)
+                $row = array_pad($row, 6, '');
+                if ($row[2] === '') {
+                    $row[2] = $row[1]; // origin_date = date
+                }
+            }
+
+            if ($row[1] === $date && $row[3] === $activity) {
+                $found       = true;
+                // mantieni origin_date e prev_pairs, aggiorna solo pairs
+                $row[4]      = $pairsStr;
             }
             $rows[] = $row;
         }
@@ -417,8 +476,10 @@ function handleSaveExercisePairs($logCsv)
     }
 
     if (!$found) {
-        $id = time() . '_' . mt_rand(1000, 9999);
-        $rows[] = [$id, $date, $activity, $pairsStr];
+        $id          = time() . '_' . mt_rand(1000, 9999);
+        $originDate  = $date; // nuovo esercizio, origine = oggi
+        $prevStr     = '';
+        $rows[] = [$id, $date, $originDate, $activity, $pairsStr, $prevStr];
     }
 
     $fh = fopen($logCsv, 'w');
@@ -427,7 +488,7 @@ function handleSaveExercisePairs($logCsv)
         echo json_encode(['error' => 'Cannot write log CSV']);
         return;
     }
-    fputcsv($fh, ['id','date','activity','pairs'], ';');
+    fputcsv($fh, ['id','date','origin_date','activity','pairs','prev_pairs'], ';');
     foreach ($rows as $row) {
         fputcsv($fh, $row, ';');
     }
@@ -435,6 +496,7 @@ function handleSaveExercisePairs($logCsv)
 
     echo json_encode(['success' => true]);
 }
+
 
 function handleDeleteExercise($logCsv)
 {
@@ -464,7 +526,7 @@ function handleDeleteExercise($logCsv)
         echo json_encode(['error' => 'Cannot write log CSV']);
         return;
     }
-    fputcsv($fh, ['id','date','activity','pairs'], ';');
+    fputcsv($fh, ['id','date','origin_date','activity','pairs','prev_pairs'], ';');
     foreach ($rows as $row) {
         fputcsv($fh, $row, ';');
     }

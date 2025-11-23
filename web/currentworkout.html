@@ -129,7 +129,10 @@ $(function() {
     $('#lbl-date').text(todayStr);
 
     const ref = getQuery('workoutRef');
-    if (ref) {
+    const todayRef = todayStr.replace(/-/g, '');
+
+    if (ref && ref !== todayRef) {
+      // replica solo se la ref è diversa da oggi
       $.post('api.php?action=cloneWorkout', {
         source: ref,
         target: todayStr
@@ -137,6 +140,7 @@ $(function() {
         loadTodayWorkout();
       });
     } else {
+      // se ref è oggi o non c'è, NON clona
       loadTodayWorkout();
     }
 
@@ -162,10 +166,11 @@ $(function() {
     $.post('api.php?action=saveExercisePairs', {
       date: todayStr,
       activity: name,
-      pairs: JSON.stringify([])
+      pairs: JSON.stringify([]) // nessun set ancora
     }).done(function(r) {
       if (r.success) {
-        $('#txt-activity').val('');
+        // non resetto la textbox; puoi farlo se vuoi:
+        // $('#txt-activity').val('');
         loadTodayWorkout();
       } else {
         alert(r.error || 'Errore salvataggio esercizio');

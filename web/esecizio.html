@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Esecizio</title>
+  <title>Esercizio</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
   <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -18,6 +18,7 @@
     <button id="btn-back" class="btn btn-outline-secondary btn-sm">Torna</button>
   </div>
 
+  <!-- Card inserimento reps/peso -->
   <div class="card mb-3">
     <div class="card-body">
       <div class="row g-2 mb-2 align-items-center">
@@ -43,9 +44,10 @@
     </div>
   </div>
 
-  <div class="card">
+  <!-- Card set attuali -->
+  <div class="card mb-3">
     <div class="card-body">
-      <h2 class="h6 mb-2">Set eseguiti</h2>
+      <h2 class="h6 mb-2">Set eseguiti (lavorazione corrente)</h2>
       <div class="table-responsive">
         <table class="table table-sm" id="tbl-sets">
           <thead>
@@ -56,14 +58,32 @@
       </div>
     </div>
   </div>
+
+  <!-- Card set precedenti (solo lettura) -->
+  <div class="card" id="card-prev" style="display:none;">
+    <div class="card-body">
+      <h2 class="h6 mb-2">Set precedenti (originario)</h2>
+      <div id="prev-info" class="small text-muted mb-2"></div>
+      <div class="table-responsive">
+        <table class="table table-sm" id="tbl-prev-sets">
+          <thead>
+            <tr><th>#</th><th>Reps</th><th>Peso</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
-let pairs = [];
+let pairs = [];       // set correnti
+let prevPairs = [];   // set precedenti (solo lettura)
 let editIndex = null;
-let viewDate = null;
-let saveDate = null;
+let viewDate = null;  // data da cui leggo (può essere origin_date)
+let saveDate = null;  // data su cui salvo (lavorazione corrente)
 let activityName = null;
+let originDate = null;
 
 function getQuery(name) {
   return new URLSearchParams(window.location.search).get(name);
@@ -98,7 +118,7 @@ function renderPairs() {
     if (editIndex === idx) {
       tr.addClass('table-success');
     }
-    tr.append($('<td>').text(idx+1));
+    tr.append($('<td>').text(idx + 1));
     tr.append($('<td>').text(p.reps));
     tr.append($('<td>').text(p.weight));
 
@@ -132,6 +152,29 @@ function renderPairs() {
   });
 }
 
+function renderPrevPairs() {
+  const card = $('#card-prev');
+  const tbody = $('#tbl-prev-sets tbody');
+  tbody.empty();
+
+  if (!prevPairs || !prevPairs.length) {
+    card.hide();
+    return;
+  }
+
+  $('#prev-info').text('Data originaria: ' + originDate);
+
+  prevPairs.forEach(function(p, idx) {
+    const tr = $('<tr>');
+    tr.append($('<td>').text(idx + 1));
+    tr.append($('<td>').text(p.reps));
+    tr.append($('<td>').text(p.weight));
+    tbody.append(tr);
+  });
+
+  card.show();
+}
+
 function savePairsToServer(cb) {
   $.post('api.php?action=saveExercisePairs', {
     date: saveDate,
@@ -154,57 +197,76 @@ $(function() {
     }
     activityName = decodeURIComponent(exParam).replace(/_/g, ' ');
 
-    const dateParam = getQuery('date');
-    const workoutRef = getQuery('workoutRef');
+    const dateParam   = getQuery('date');
+    const workoutRef  = getQuery('workoutRef');
 
     if (workoutRef) {
-      const ref = workoutRef;
-      const refDate = ref.slice(0,4) + '-' + ref.slice(4,6) + '-' + ref.slice(6,8);
-      viewDate = refDate;
-      saveDate = dateParam || todayYMD();
+      // caso: sto guardando un workout originario ma salvo su data corrente o su "date"
+      const ref        = workoutRef;
+      const refDate    = ref.slice(0,4) + '-' + ref.slice(4,6) + '-' + ref.slice(6,8);
+      viewDate         = refDate;
+      saveDate         = dateParam || todayYMD();
     } else {
+      // caso standard: leggo e salvo sulla stessa data (es. currentworkout di oggi)
       saveDate = dateParam || todayYMD();
       viewDate = saveDate;
     }
 
     $('#title-ex').text(activityName);
-    $('#subtitle-date').text('Visualizzazione: ' + viewDate + ' | Salvataggio su: ' + saveDate);
 
-    $.getJSON('api.php?action=getExercise&date=' + encodeURIComponent(viewDate)
-      + '&activity=' + encodeURIComponent(activityName))
-      .done(function(res) {
-        pairs = res.pairs || [];
-        renderPairs();
-      });
+    // carico dati esercizio per la data di visualizzazione
+    $.getJSON(
+      'api.php?action=getExercise&date=' + encodeURIComponent(viewDate) +
+      '&activity=' + encodeURIComponent(activityName)
+    ).done(function(res) {
+      pairs      = res.pairs || [];
+      prevPairs  = res.prev_pairs || [];
+      originDate = res.origin_date || viewDate;
+
+      $('#subtitle-date').text(
+        'Precedente: ' + originDate + ' | Lavorazione: ' + saveDate
+      );
+
+      renderPairs();
+      renderPrevPairs();
+    });
 
     $('#btn-back').on('click', function() {
       window.history.back();
     });
   });
 
+  // Pulsanti +/- per reps
   $('#btn-reps-minus').on('click', function() {
-    let v = parseInt($('#txt-reps').val(), 10) || 0;
-    v = Math.max(0, v-1);
+    let v = parseInt($('#txt-reps').val(), 10);
+    if (isNaN(v)) v = 0;
+    v = Math.max(0, v - 1);
     $('#txt-reps').val(v);
   });
   $('#btn-reps-plus').on('click', function() {
-    let v = parseInt($('#txt-reps').val(), 10) || 0;
+    let v = parseInt($('#txt-reps').val(), 10);
+    if (isNaN(v)) v = 0;
     v++;
     $('#txt-reps').val(v);
   });
+
+  // Pulsanti +/- per peso
   $('#btn-weight-minus').on('click', function() {
-    let v = parseFloat($('#txt-weight').val()) || 0;
-    v = Math.max(0, v-0.5);
+    let v = parseFloat($('#txt-weight').val());
+    if (isNaN(v)) v = 0;
+    v = Math.max(0, v - 0.5);
     $('#txt-weight').val(v.toFixed(1));
   });
   $('#btn-weight-plus').on('click', function() {
-    let v = parseFloat($('#txt-weight').val()) || 0;
+    let v = parseFloat($('#txt-weight').val());
+    if (isNaN(v)) v = 0;
     v += 0.5;
     $('#txt-weight').val(v.toFixed(1));
   });
 
+  // Salvataggio set
   $('#btn-save').on('click', function() {
-    const reps = parseInt($('#txt-reps').val(), 10);
+    const reps   = parseInt($('#txt-reps').val(), 10);
     const weight = parseFloat($('#txt-weight').val());
     if (isNaN(reps) || reps <= 0 || isNaN(weight) || weight < 0) {
       showMsg('Valori non validi', true);
@@ -223,8 +285,7 @@ $(function() {
         showMsg(err || 'Errore salvataggio', true);
         return;
       }
-      $('#txt-reps').val('0');
-      $('#txt-weight').val('0');
+      // NON resetto txt-reps / txt-weight: prossimo set verrà da questi valori
       editIndex = null;
       renderPairs();
       showMsg('Set salvato', false);
