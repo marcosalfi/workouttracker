@@ -15,7 +15,10 @@
       <h1 class="h5 mb-0" id="title-ex">Esercizio</h1>
       <small id="subtitle-date" class="text-muted"></small>
     </div>
-    <button id="btn-back" class="btn btn-outline-secondary btn-sm">Torna</button>
+    <div class="d-flex gap-2">
+      <button id="btn-timer" class="btn btn-warning btn-sm">Timer</button>
+      <button id="btn-back" class="btn btn-outline-secondary btn-sm">Torna</button>
+    </div>
   </div>
 
   <!-- Card inserimento reps/peso -->
@@ -201,20 +204,17 @@ $(function() {
     const workoutRef  = getQuery('workoutRef');
 
     if (workoutRef) {
-      // caso: sto guardando un workout originario ma salvo su data corrente o su "date"
       const ref        = workoutRef;
       const refDate    = ref.slice(0,4) + '-' + ref.slice(4,6) + '-' + ref.slice(6,8);
       viewDate         = refDate;
       saveDate         = dateParam || todayYMD();
     } else {
-      // caso standard: leggo e salvo sulla stessa data (es. currentworkout di oggi)
       saveDate = dateParam || todayYMD();
       viewDate = saveDate;
     }
 
     $('#title-ex').text(activityName);
 
-    // carico dati esercizio per la data di visualizzazione
     $.getJSON(
       'api.php?action=getExercise&date=' + encodeURIComponent(viewDate) +
       '&activity=' + encodeURIComponent(activityName)
@@ -232,7 +232,14 @@ $(function() {
     });
 
     $('#btn-back').on('click', function() {
-      window.history.back();
+      const qs = window.location.search || '';
+      window.location = 'workoutView.html';
+    });
+
+    $('#btn-timer').on('click', function() {
+      // porta con sé tutti i parametri della query string corrente
+      const qs = window.location.search || '';
+      window.location = 'timer.html' + qs;
     });
   });
 
@@ -243,6 +250,7 @@ $(function() {
     v = Math.max(0, v - 1);
     $('#txt-reps').val(v);
   });
+  
   $('#btn-reps-plus').on('click', function() {
     let v = parseInt($('#txt-reps').val(), 10);
     if (isNaN(v)) v = 0;
@@ -285,7 +293,7 @@ $(function() {
         showMsg(err || 'Errore salvataggio', true);
         return;
       }
-      // NON resetto txt-reps / txt-weight: prossimo set verrà da questi valori
+      // NON resetto txt-reps / txt-weight
       editIndex = null;
       renderPairs();
       showMsg('Set salvato', false);

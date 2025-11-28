@@ -34,13 +34,6 @@
 </div>
 
 <script>
-function todayYMD() {
-  const d = new Date();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return d.getFullYear() + '-' + m + '-' + day;
-}
-
 function ensureLogin(cb) {
   $.getJSON('auth.php?action=me').done(function(res) {
     if (!res.logged) {
@@ -65,27 +58,15 @@ function loadDates() {
           .text('Nessun workout registrato.');
         return;
       }
-
-      const today = todayYMD();
-
       dates.forEach(function(d) {
         var tr = $('<tr>');
         tr.append($('<td>').text(d));
-
         var btn = $('<button>')
           .addClass('btn btn-sm btn-primary')
           .text('Apri')
           .on('click', function() {
-            if (d === today) {
-              // Oggi: vai in modalità edit direttamente su currentworkout
-              var ref = d.replace(/-/g, '');
-              window.location = 'currentworkout.html?workoutRef=' + encodeURIComponent(ref);
-            } else {
-              // Giorni passati: sola visualizzazione
-              window.location = 'workoutView.html?date=' + encodeURIComponent(d);
-            }
+            window.location = 'workoutView.html?date=' + encodeURIComponent(d);
           });
-
         tr.append($('<td class="text-end">').append(btn));
         $('#tbl-dates tbody').append(tr);
       });
