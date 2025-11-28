@@ -233,7 +233,7 @@ $(function() {
 
     $('#btn-back').on('click', function() {
       const qs = window.location.search || '';
-      window.location = 'workoutView.html';
+      window.location = 'currentworkout.html';
     });
 
     $('#btn-timer').on('click', function() {
@@ -259,18 +259,49 @@ $(function() {
   });
 
   // Pulsanti +/- per peso
-  $('#btn-weight-minus').on('click', function() {
-    let v = parseFloat($('#txt-weight').val());
-    if (isNaN(v)) v = 0;
-    v = Math.max(0, v - 0.5);
-    $('#txt-weight').val(v.toFixed(1));
-  });
-  $('#btn-weight-plus').on('click', function() {
-    let v = parseFloat($('#txt-weight').val());
-    if (isNaN(v)) v = 0;
-    v += 0.5;
-    $('#txt-weight').val(v.toFixed(1));
-  });
+    function changeWeight(delta) {
+      let v = parseFloat($('#txt-weight').val());
+      if (isNaN(v)) v = 0;
+      v = Math.max(0, v + delta);
+      $('#txt-weight').val(v.toFixed(1));
+    }      
+      
+    // Click normale (desktop + tap veloce su mobile)
+    $('#btn-weight-plus').on('click',  () => changeWeight(+1));
+    $('#btn-weight-minus').on('click', () => changeWeight(-1));
+
+    // Long-press solo su device touch
+    const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    if (isTouchDevice) {
+      const PRESS_INTERVAL = 500; // ms per longpress e ripetizione
+
+      function setupLongPress(selector, deltaLong) {
+        let pressTimer = null;
+        let repeatTimer = null;
+        const $btn = $(selector);
+        function startPress() {
+          // primo +10/-10 dopo PRESS_INTERVAL
+          pressTimer = setTimeout(() => {
+            changeWeight(deltaLong);
+            // poi ogni PRESS_INTERVAL
+            repeatTimer = setInterval(() => {
+              changeWeight(deltaLong);
+            }, PRESS_INTERVAL);
+          }, PRESS_INTERVAL);
+        }
+        function endPress() {
+          clearTimeout(pressTimer);
+          clearInterval(repeatTimer);
+          pressTimer = null;
+          repeatTimer = null;
+        }
+        $btn.on('touchstart', startPress);
+        $btn.on('touchend touchcancel', endPress);
+      }
+
+      setupLongPress('#btn-weight-plus',  +10);
+      setupLongPress('#btn-weight-minus', -10);
+    }
 
   // Salvataggio set
   $('#btn-save').on('click', function() {
