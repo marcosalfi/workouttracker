@@ -7,13 +7,25 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
   <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
 </head>
 <body class="bg-light">
 <div class="container py-3">
-  <div class="d-flex justify-content-between align-items-center mb-3">
-    <h1 class="h4 mb-0">I tuoi workout</h1>
-    <button id="btn-logout" class="btn btn-outline-secondary btn-sm">Logout</button>
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h4 mb-0">I tuoi workout</h1>
+
+  <div class="d-flex gap-3">
+    <!-- Fullscreen -->
+    <button id="btn-fullscreen" class="btn btn-sm btn-dark" title="Fullscreen">
+      <i class="bi bi-arrows-fullscreen"></i>
+    </button>
+
+    <!-- Logout -->
+    <button id="btn-logout" class="btn btn-sm btn-outline-danger" title="Logout">
+      <i class="bi bi-box-arrow-right"></i>
+    </button>
   </div>
+</div>
 
   <button id="btn-new-today" class="btn btn-success btn-lg w-100 mb-3">
     Nuovo workout oggi
@@ -24,7 +36,13 @@
       <h2 class="h5 mb-3">Storico</h2>
       <div class="table-responsive">
         <table class="table table-sm" id="tbl-dates">
-          <thead><tr><th>Data</th><th class="text-end">Azioni</th></tr></thead>
+          <thead>
+          <tr>
+            <th style="width: 4rem;">#</th>
+            <th>Data</th>
+            <th class="text-end">Azioni</th>
+          </tr>
+          </thead>
           <tbody></tbody>
         </table>
       </div>
@@ -34,6 +52,26 @@
 </div>
 
 <script>
+function toggleFullScreen() {
+  if (!document.fullscreenElement) {
+    // Entra in fullscreen
+    document.documentElement.requestFullscreen().catch(err => {
+      console.warn("Fullscreen error:", err);
+    });
+  } else {
+    // Esce dal fullscreen
+    document.exitFullscreen();
+  }
+}
+
+
+function todayYMD() {
+  const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return d.getFullYear() + '-' + m + '-' + day;
+}
+
 function ensureLogin(cb) {
   $.getJSON('auth.php?action=me').done(function(res) {
     if (!res.logged) {
@@ -44,13 +82,63 @@ function ensureLogin(cb) {
   });
 }
 
+// YYYY-MM-DD -> Date (locale, ma ci basta per ordinare)
+function parseYMD(str) {
+  const parts = str.split('-');
+  if (parts.length !== 3) return null;
+  const y = parseInt(parts[0], 10);
+  const m = parseInt(parts[1], 10) - 1;
+  const d = parseInt(parts[2], 10);
+  return new Date(y, m, d);
+}
+
+// ISO week key (anno-settimana) per resettare la numerazione ogni settimana
+function getWeekKey(date) {
+  const tmp = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = tmp.getUTCDay() || 7; // 1..7 (lunedì=1)
+  tmp.setUTCDate(tmp.getUTCDate() + 4 - dayNum); // giovedì della settimana
+  const yearStart = new Date(Date.UTC(tmp.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil((((tmp - yearStart) / 86400000) + 1) / 7);
+  return tmp.getUTCFullYear() + '-W' + String(weekNo).padStart(2, '0');
+}
+
+// Calcola indice giornaliero per settimana (1..n) per ogni data
+function buildWeeklyIndexMap(dates) {
+  const map = {};
+  const sortedAsc = dates.slice().sort(function(a, b) {
+    return a.localeCompare(b); // dal più vecchio al più recente
+  });
+
+  let currentWeekKey = null;
+  let counter = 0;
+
+  sortedAsc.forEach(function(dStr) {
+    const dObj = parseYMD(dStr);
+    if (!dObj) {
+      map[dStr] = 0;
+      return;
+    }
+
+    const wk = getWeekKey(dObj);
+    if (wk !== currentWeekKey) {
+      currentWeekKey = wk;
+      counter = 1;
+    } else {
+      counter++;
+    }
+    map[dStr] = counter;
+  });
+
+  return map;
+}
+
 function loadDates() {
   $('#tbl-dates tbody').empty();
   $('#msg-list').addClass('d-none');
 
   $.getJSON('api.php?action=listWorkoutDates')
     .done(function(res) {
-      var dates = res.dates || [];
+      let dates = res.dates || [];
       if (dates.length === 0) {
         $('#msg-list')
           .removeClass('d-none alert-danger')
@@ -58,15 +146,42 @@ function loadDates() {
           .text('Nessun workout registrato.');
         return;
       }
+
+      const today = todayYMD();
+
+      // Mappa: data -> indice (1..n) all'interno della settimana
+      const weeklyIndex = buildWeeklyIndexMap(dates);
+
+      // Ordina le date dal più recente al meno recente
+      dates.sort(function(a, b) {
+        return b.localeCompare(a);
+      });
+
       dates.forEach(function(d) {
-        var tr = $('<tr>');
+        const tr = $('<tr>');
+
+        // # settimanale
+        const idx = weeklyIndex[d] || '';
+        tr.append($('<td>').text(idx));
+
+        // Data
         tr.append($('<td>').text(d));
-        var btn = $('<button>')
+
+        // Pulsante Apri (oggi -> currentworkout, altrimenti workoutView)
+        const btn = $('<button>')
           .addClass('btn btn-sm btn-primary')
           .text('Apri')
           .on('click', function() {
-            window.location = 'workoutView.html?date=' + encodeURIComponent(d);
+            if (d === today) {
+              // Oggi: vai in modalità edit direttamente su currentworkout
+              const ref = d.replace(/-/g, '');
+              window.location = 'currentworkout.html?workoutRef=' + encodeURIComponent(ref);
+            } else {
+              // Giorni passati: sola visualizzazione
+              window.location = 'workoutView.html?date=' + encodeURIComponent(d);
+            }
           });
+
         tr.append($('<td class="text-end">').append(btn));
         $('#tbl-dates tbody').append(tr);
       });
@@ -81,6 +196,10 @@ $(function() {
   $('#btn-new-today').on('click', function() {
     window.location = 'currentworkout.html';
   });
+  
+  $('#btn-fullscreen').on('click', function() {
+	  toggleFullScreen();
+	});
 
   $('#btn-logout').on('click', function() {
     $.getJSON('auth.php?action=logout', function() {

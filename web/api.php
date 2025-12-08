@@ -55,6 +55,9 @@ switch ($action) {
     case 'deleteExercise':
         handleDeleteExercise($logCsv);
         break;
+	case 'renameExercise':
+        handleRenameExercise($user['log_csv']);
+        break;
     default:
         echo json_encode(['error' => 'Unknown action']);
 }
@@ -534,3 +537,66 @@ function handleDeleteExercise($logCsv)
 
     echo json_encode(['success' => true]);
 }
+
+function handleRenameExercise($logCsv)
+{
+    $date        = isset($_POST['date']) ? trim($_POST['date']) : '';
+    $oldActivity = isset($_POST['old_activity']) ? trim($_POST['old_activity']) : '';
+    $newActivity = isset($_POST['new_activity']) ? trim($_POST['new_activity']) : '';
+
+    if ($date === '' || $oldActivity === '' || $newActivity === '') {
+        http_response_code(400);
+        echo json_encode(['error' => 'Missing date or activity']);
+        return;
+    }
+
+    // normalizza la data in formato YYYY-MM-DD se usi già una funzione simile
+    if (function_exists('normalizeDate')) {
+        $date = normalizeDate($date);
+    }
+
+    $rows    = [];
+    $changed = false;
+
+    if (($fh = fopen($logCsv, 'r')) !== false) {
+        $header = fgetcsv($fh, 0, ';');
+        while (($row = fgetcsv($fh, 0, ';')) !== false) {
+            // aggiorna eventuali righe vecchie: porta a 6 colonne
+            if (count($row) < 6) {
+                $row = array_pad($row, 6, '');
+                if ($row[2] === '') {
+                    $row[2] = $row[1]; // origin_date = date
+                }
+            }
+
+            // schema: 0=id,1=date,2=origin_date,3=activity,4=pairs,5=prev_pairs
+            if ($row[1] === $date && $row[3] === $oldActivity) {
+                $row[3] = $newActivity;
+                $changed = true;
+            }
+            $rows[] = $row;
+        }
+        fclose($fh);
+    }
+
+    if (!$changed) {
+        echo json_encode(['error' => 'Exercise not found']);
+        return;
+    }
+
+    $fh = fopen($logCsv, 'w');
+    if (!$fh) {
+        http_response_code(500);
+        echo json_encode(['error' => 'Cannot write log CSV']);
+        return;
+    }
+    // header coerente con il resto del progetto
+    fputcsv($fh, ['id','date','origin_date','activity','pairs','prev_pairs'], ';');
+    foreach ($rows as $row) {
+        fputcsv($fh, $row, ';');
+    }
+    fclose($fh);
+
+    echo json_encode(['success' => true]);
+}
+

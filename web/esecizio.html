@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
   <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
 </head>
 <body class="bg-light">
 <div class="container py-3">
@@ -16,8 +17,15 @@
       <small id="subtitle-date" class="text-muted"></small>
     </div>
     <div class="d-flex gap-2">
-      <button id="btn-timer" class="btn btn-warning btn-sm">Timer</button>
-      <button id="btn-back" class="btn btn-outline-secondary btn-sm">Torna</button>
+      <button id="btn-rename-open" class="btn btn-outline-primary btn-sm" title="Rinomina esercizio">
+        <i class="bi bi-pencil-square"></i>
+      </button>
+      <button id="btn-timer" class="btn btn-warning btn-sm" title="Timer">
+        <i class="bi bi-hourglass-split"></i>
+      </button>
+      <button id="btn-back" class="btn btn-outline-secondary btn-sm" title="Torna">
+        <i class="bi bi-arrow-left"></i>
+      </button>
     </div>
   </div>
 
@@ -54,7 +62,12 @@
       <div class="table-responsive">
         <table class="table table-sm" id="tbl-sets">
           <thead>
-            <tr><th>#</th><th>Reps</th><th>Peso</th><th class="text-end">Azioni</th></tr>
+            <tr>
+              <th>#</th>
+              <th>Reps</th>
+              <th>Peso</th>
+              <th class="text-end">Azioni</th>
+            </tr>
           </thead>
           <tbody></tbody>
         </table>
@@ -66,14 +79,38 @@
   <div class="card" id="card-prev" style="display:none;">
     <div class="card-body">
       <h2 class="h6 mb-2">Set precedenti (originario)</h2>
-      <div id="prev-info" class="small text-muted mb-2"></div>
       <div class="table-responsive">
         <table class="table table-sm" id="tbl-prev-sets">
           <thead>
-            <tr><th>#</th><th>Reps</th><th>Peso</th></tr>
+            <tr>
+              <th>#</th>
+              <th>Reps</th>
+              <th>Peso</th>
+              <th class="text-end">Azioni</th>
+            </tr>
           </thead>
           <tbody></tbody>
         </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal rinomina esercizio -->
+<div class="modal fade" id="modalRename" tabindex="-1" aria-labelledby="modalRenameLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalRenameLabel">Rinomina esercizio</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Chiudi"></button>
+      </div>
+      <div class="modal-body">
+        <label for="txt-rename" class="form-label">Nuovo nome</label>
+        <input type="text" id="txt-rename" class="form-control" placeholder="Nuovo nome esercizio">
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annulla</button>
+        <button type="button" class="btn btn-primary" id="btn-rename-confirm">OK</button>
       </div>
     </div>
   </div>
@@ -116,11 +153,26 @@ function showMsg(msg, isError) {
 function renderPairs() {
   const tbody = $('#tbl-sets tbody');
   tbody.empty();
+
   pairs.forEach(function(p, idx) {
     const tr = $('<tr>');
-    if (editIndex === idx) {
-      tr.addClass('table-success');
+
+    // confronto con set precedente (se esiste stessa posizione)
+    let improved = false;
+    if (prevPairs && prevPairs[idx]) {
+      const prev = prevPairs[idx];
+      if ((p.reps > prev.reps) || (p.weight > prev.weight)) {
+        improved = true;
+      }
     }
+
+    if (improved) {
+      tr.addClass('table-success'); // highlight verde se migliorato
+    }
+    if (editIndex === idx) {
+      tr.addClass('table-primary'); // evidenzia riga in edit
+    }
+
     tr.append($('<td>').text(idx + 1));
     tr.append($('<td>').text(p.reps));
     tr.append($('<td>').text(p.weight));
@@ -165,13 +217,23 @@ function renderPrevPairs() {
     return;
   }
 
-  $('#prev-info').text('Data originaria: ' + originDate);
-
   prevPairs.forEach(function(p, idx) {
     const tr = $('<tr>');
     tr.append($('<td>').text(idx + 1));
     tr.append($('<td>').text(p.reps));
     tr.append($('<td>').text(p.weight));
+
+    // due tasti invisibili per allineare la colonna azioni
+    const btn1 = $('<button>')
+      .addClass('btn btn-sm btn-outline-secondary invisible')
+      .attr('tabindex', '-1')
+      .text('·');
+    const btn2 = $('<button>')
+      .addClass('btn btn-sm btn-outline-secondary invisible')
+      .attr('tabindex', '-1')
+      .text('·');
+
+    tr.append($('<td class="text-end">').append(btn1, btn2));
     tbody.append(tr);
   });
 
@@ -192,6 +254,16 @@ function savePairsToServer(cb) {
 }
 
 $(function() {
+  // se arrivo dal timer con valori in query, li rimetto subito nei campi
+  const repsFromQuery = getQuery('reps');
+  const weightFromQuery = getQuery('weight');
+  if (repsFromQuery !== null && repsFromQuery !== '') {
+    $('#txt-reps').val(repsFromQuery);
+  }
+  if (weightFromQuery !== null && weightFromQuery !== '') {
+    $('#txt-weight').val(weightFromQuery);
+  }
+
   ensureLogin(function() {
     const exParam = getQuery('ex');
     if (!exParam) {
@@ -223,9 +295,8 @@ $(function() {
       prevPairs  = res.prev_pairs || [];
       originDate = res.origin_date || viewDate;
 
-      $('#subtitle-date').text(
-        'Precedente: ' + originDate + ' | Lavorazione: ' + saveDate
-      );
+      // Niente più testo "Precedente / Lavorazione"
+      $('#subtitle-date').text('');
 
       renderPairs();
       renderPrevPairs();
@@ -238,8 +309,53 @@ $(function() {
 
     $('#btn-timer').on('click', function() {
       // porta con sé tutti i parametri della query string corrente
-      const qs = window.location.search || '';
-      window.location = 'timer.html' + qs;
+      // arricchiti con i valori attuali di reps e peso
+      const params = new URLSearchParams(window.location.search);
+      params.set('reps', $('#txt-reps').val() || '');
+      params.set('weight', $('#txt-weight').val() || '');
+      const qs = params.toString();
+      window.location = 'timer.html' + (qs ? '?' + qs : '');
+    });
+
+    // Apertura modale rinomina
+    $('#btn-rename-open').on('click', function() {
+      $('#txt-rename').val(activityName);
+      const modal = new bootstrap.Modal(document.getElementById('modalRename'));
+      modal.show();
+    });
+
+    // Conferma rinomina
+    $('#btn-rename-confirm').on('click', function() {
+      const newName = $('#txt-rename').val().trim();
+      if (!newName) {
+        showMsg('Inserisci un nuovo nome per l\'esercizio.', true);
+        return;
+      }
+      if (newName === activityName) {
+        showMsg('Il nome è uguale a quello attuale.', true);
+        return;
+      }
+
+      $.post('api.php?action=renameExercise', {
+        date: saveDate,
+        old_activity: activityName,
+        new_activity: newName
+      }).done(function(res) {
+        if (!res.success) {
+          showMsg(res.error || 'Errore rinomina esercizio', true);
+          return;
+        }
+
+        activityName = newName;
+        $('#title-ex').text(activityName);
+
+        const params = new URLSearchParams(window.location.search);
+        params.set('ex', newName.replace(/ /g, '_'));
+        const qs = params.toString();
+        window.location = 'esecizio.html' + (qs ? '?' + qs : '');
+      }).fail(function(xhr) {
+        showMsg(xhr.responseText || 'Errore HTTP nella rinomina', true);
+      });
     });
   });
 
@@ -250,7 +366,7 @@ $(function() {
     v = Math.max(0, v - 1);
     $('#txt-reps').val(v);
   });
-  
+
   $('#btn-reps-plus').on('click', function() {
     let v = parseInt($('#txt-reps').val(), 10);
     if (isNaN(v)) v = 0;
@@ -259,49 +375,47 @@ $(function() {
   });
 
   // Pulsanti +/- per peso
-    function changeWeight(delta) {
-      let v = parseFloat($('#txt-weight').val());
-      if (isNaN(v)) v = 0;
-      v = Math.max(0, v + delta);
-      $('#txt-weight').val(v.toFixed(1));
-    }      
-      
-    // Click normale (desktop + tap veloce su mobile)
-    $('#btn-weight-plus').on('click',  () => changeWeight(+1));
-    $('#btn-weight-minus').on('click', () => changeWeight(-1));
+  function changeWeight(delta) {
+    let v = parseFloat($('#txt-weight').val());
+    if (isNaN(v)) v = 0;
+    v = Math.max(0, v + delta);
+    $('#txt-weight').val(v.toFixed(1));
+  }
 
-    // Long-press solo su device touch
-    const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-    if (isTouchDevice) {
-      const PRESS_INTERVAL = 500; // ms per longpress e ripetizione
+  // Click normale (desktop + tap veloce su mobile)
+  $('#btn-weight-plus').on('click',  () => changeWeight(+1));
+  $('#btn-weight-minus').on('click', () => changeWeight(-1));
 
-      function setupLongPress(selector, deltaLong) {
-        let pressTimer = null;
-        let repeatTimer = null;
-        const $btn = $(selector);
-        function startPress() {
-          // primo +10/-10 dopo PRESS_INTERVAL
-          pressTimer = setTimeout(() => {
+  // Long-press solo su device touch
+  const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+  if (isTouchDevice) {
+    const PRESS_INTERVAL = 500; // ms per longpress e ripetizione
+
+    function setupLongPress(selector, deltaLong) {
+      let pressTimer = null;
+      let repeatTimer = null;
+      const $btn = $(selector);
+      function startPress() {
+        pressTimer = setTimeout(() => {
+          changeWeight(deltaLong);
+          repeatTimer = setInterval(() => {
             changeWeight(deltaLong);
-            // poi ogni PRESS_INTERVAL
-            repeatTimer = setInterval(() => {
-              changeWeight(deltaLong);
-            }, PRESS_INTERVAL);
           }, PRESS_INTERVAL);
-        }
-        function endPress() {
-          clearTimeout(pressTimer);
-          clearInterval(repeatTimer);
-          pressTimer = null;
-          repeatTimer = null;
-        }
-        $btn.on('touchstart', startPress);
-        $btn.on('touchend touchcancel', endPress);
+        }, PRESS_INTERVAL);
       }
-
-      setupLongPress('#btn-weight-plus',  +10);
-      setupLongPress('#btn-weight-minus', -10);
+      function endPress() {
+        clearTimeout(pressTimer);
+        clearInterval(repeatTimer);
+        pressTimer = null;
+        repeatTimer = null;
+      }
+      $btn.on('touchstart', startPress);
+      $btn.on('touchend touchcancel', endPress);
     }
+
+    setupLongPress('#btn-weight-plus',  +10);
+    setupLongPress('#btn-weight-minus', -10);
+  }
 
   // Salvataggio set
   $('#btn-save').on('click', function() {
@@ -324,7 +438,6 @@ $(function() {
         showMsg(err || 'Errore salvataggio', true);
         return;
       }
-      // NON resetto txt-reps / txt-weight
       editIndex = null;
       renderPairs();
       showMsg('Set salvato', false);
