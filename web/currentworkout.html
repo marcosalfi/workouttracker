@@ -92,7 +92,7 @@ function loadTodayWorkout() {
         const link = $('<a href="#">').text(it.activity).on('click', function(e) {
           e.preventDefault();
           const ex = it.activity.replace(/ /g, '_');
-          window.location = 'esecizio.html?ex='
+          window.location = 'esercizio.html?ex='
             + encodeURIComponent(ex) + '&date=' + encodeURIComponent(todayStr);
         });
         tr.append($('<td>').append(link));

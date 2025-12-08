@@ -352,7 +352,7 @@ $(function() {
         const params = new URLSearchParams(window.location.search);
         params.set('ex', newName.replace(/ /g, '_'));
         const qs = params.toString();
-        window.location = 'esecizio.html' + (qs ? '?' + qs : '');
+        window.location = 'esercizio.html' + (qs ? '?' + qs : '');
       }).fail(function(xhr) {
         showMsg(xhr.responseText || 'Errore HTTP nella rinomina', true);
       });
