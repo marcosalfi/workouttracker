@@ -4,12 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Timer</title>
+
+  <!-- Bootstrap (solo per bottoni) -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+
   <style>
-    html, body {
-      height: 100%;
-      margin: 0;
-    }
+    html, body { height: 100%; margin: 0; }
+
     body {
       background-color: #000;
       color: #fff;
@@ -19,56 +20,299 @@
       justify-content: center;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       text-align: center;
+      gap: 1rem;
+      padding: 1rem;
     }
-    #timer-display {
-      font-size: 20vw; /* grande su mobile */
-      font-weight: bold;
+
+    /* ===== DISPLAY LANDSCAPE (MM:SS su una riga) ===== */
+    #timer-display-landscape {
+      display: none;            /* attivato solo in landscape via media query */
+      font-size: 20vw;          /* grande su mobile */
+      font-weight: 800;
       line-height: 1;
+      letter-spacing: 0.02em;
+      user-select: none;
     }
-    #btn-stop {
-      margin-top: 2rem;
+
+    /* ===== DISPLAY PORTRAIT (minuti sopra, secondi sotto) ===== */
+    #timer-display-portrait {
+      display: none;            /* attivato solo in portrait via media query */
+      width: 100%;
+      max-width: 48rem;
+      user-select: none;
+    }
+    
+	/* Portrait: minuti + ":" sulla stessa riga, super grandi */
+	#t-mins-row {
+	  display: flex;
+	  align-items: baseline;
+	  justify-content: center;
+	  gap: 2vw;               /* spazio tra MM e ":" */
+	}
+
+	/* Minuti (ancora più grandi SOLO in portrait) */
+	#t-mins {
+	  font-size: 32vw;        /* era 26vw */
+	  font-weight: 900;
+	  line-height: 1;
+	  letter-spacing: 0.02em;
+	}
+
+	/* ":" accanto ai minuti (non più al centro verticale) */
+	#t-colon {
+	  font-size: 18vw;        /* più grande, ma meno dei minuti */
+	  font-weight: 800;
+	  line-height: 1;
+	  opacity: 0.95;
+	  margin: 0;              /* rimuove il margine verticale */
+	}
+
+	/* Secondi in basso (ancora più grandi SOLO in portrait) */
+	#t-secs {
+	  font-size: 32vw;        /* era 26vw */
+	  font-weight: 900;
+	  line-height: 1;
+	  letter-spacing: 0.02em;
+	}
+
+    /* Bottoni */
+    .btn-row {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-top: 1rem;
+      width: 100%;
+      max-width: 32rem;
+    }
+
+    #btn-stop, #btn-reset {
       font-size: 1.2rem;
       padding: 0.75rem 2rem;
+      min-width: 10rem;
+    }
+
+    /* ===== Switch UI in base all'orientamento ===== */
+    @media (orientation: portrait) {
+      #timer-display-portrait { display: block; }
+      #timer-display-landscape { display: none; }
+    }
+
+    @media (orientation: landscape) {
+      #timer-display-portrait { display: none; }
+      #timer-display-landscape { display: block; }
     }
   </style>
 </head>
+
 <body>
-  <div id="timer-display">00:00</div>
-  <button id="btn-stop" class="btn btn-danger btn-lg">Stop</button>
+  <!-- Display landscape: MM:SS -->
+  <div id="timer-display-landscape">00:00</div>
+
+	<!-- Display portrait: MM (sopra) : (accanto ai minuti) / SS (sotto) -->
+	<div id="timer-display-portrait" aria-label="Timer">
+	  <div id="t-mins-row">
+		<div id="t-mins">00</div>
+		<div id="t-colon">:</div>
+	  </div>
+	  <div id="t-secs">00</div>
+	</div>
+
+
+  <div class="btn-row">
+    <button id="btn-reset" class="btn btn-outline-light btn-lg">Reset</button>
+    <button id="btn-stop" class="btn btn-danger btn-lg">Stop</button>
+  </div>
 
 <script>
+/**
+ * NOTE UX:
+ * - Portrait: numeri enormi con minuti sopra e secondi sotto (non obbliga a ruotare).
+ * - Landscape: mostra MM:SS e prova a BLOCCARE l'orientamento in landscape.
+ *   (Il lock è "best-effort": molti browser lo permettono solo dopo un gesto utente.)
+ */
+
+// ===================== TIMER =====================
 let totalSeconds = 0;
 let timerId = null;
 
-function formatTime(sec) {
+// ===================== WAKE LOCK (anti-spegnimento) =====================
+let wakeLock = null;
+let wakeLockInterval = null;
+
+// ===================== ORIENTATION LOCK =====================
+// Flag: il browser permette il lock solo dopo gesture (tap/click).
+let userInteracted = false;
+
+/** Formatta in MM:SS (per landscape). */
+function formatTimeMMSS(sec) {
   const m = Math.floor(sec / 60);
   const s = sec % 60;
   return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
 }
 
-function updateDisplay() {
-  document.getElementById('timer-display').textContent = formatTime(totalSeconds);
+/** Ritorna { mm, ss } (per portrait). */
+function splitTimeMMSS(sec) {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return {
+    mm: String(m).padStart(2, '0'),
+    ss: String(s).padStart(2, '0')
+  };
 }
 
-// parte subito alla apertura della pagina
+/** True se lo schermo è in landscape (robusto). */
+function isLandscape() {
+  // matchMedia è più affidabile di screen.orientation su alcuni device
+  return window.matchMedia && window.matchMedia('(orientation: landscape)').matches;
+}
+
+/** Aggiorna entrambi i display (landscape e portrait). */
+function updateDisplay() {
+  // Landscape: MM:SS in una riga
+  document.getElementById('timer-display-landscape').textContent = formatTimeMMSS(totalSeconds);
+
+  // Portrait: minuti sopra, secondi sotto
+  const t = splitTimeMMSS(totalSeconds);
+  document.getElementById('t-mins').textContent = t.mm;
+  document.getElementById('t-secs').textContent = t.ss;
+}
+
+/** Ferma l'intervallo del timer. */
+function stopInterval() {
+  if (timerId) {
+    clearInterval(timerId);
+    timerId = null;
+  }
+}
+
+/** Parte subito all'apertura pagina. */
 function startTimer() {
   updateDisplay();
+  stopInterval();
+
   timerId = setInterval(function() {
     totalSeconds++;
     updateDisplay();
   }, 1000);
 }
 
-document.getElementById('btn-stop').addEventListener('click', function() {
-  if (timerId) {
-    clearInterval(timerId);
+// ===================== WAKE LOCK =====================
+async function requestWakeLock() {
+  if (!('wakeLock' in navigator)) return;
+
+  try {
+    wakeLock = await navigator.wakeLock.request('screen');
+  } catch (err) {
+    // Non blocca l'uso del timer: best-effort
+    console.warn('Wake Lock error:', err);
   }
-  // torna alla pagina esercizio con gli stessi parametri di query
+}
+
+function releaseWakeLock() {
+  if (wakeLock) {
+    wakeLock.release().catch(() => {});
+    wakeLock = null;
+  }
+}
+
+function startWakeLockCycle() {
+  requestWakeLock();
+
+  // ri-richiede il wake lock ogni 30s (alcuni browser lo rilasciano)
+  wakeLockInterval = setInterval(() => {
+    if (!wakeLock) requestWakeLock();
+  }, 30000);
+}
+
+function stopWakeLockCycle() {
+  if (wakeLockInterval) {
+    clearInterval(wakeLockInterval);
+    wakeLockInterval = null;
+  }
+  releaseWakeLock();
+}
+
+// ===================== ORIENTATION LOCK (LANDSCAPE) =====================
+async function lockLandscapeIfPossible() {
+  // Richiesto: in landscape prova a bloccare orientamento.
+  // Nota: molti browser richiedono "user gesture" -> usiamo userInteracted.
+  if (!isLandscape()) return;
+  if (!userInteracted) return;
+
+  try {
+    if (screen.orientation && screen.orientation.lock) {
+      await screen.orientation.lock('landscape');
+    }
+  } catch (err) {
+    // Best-effort: se fallisce, non facciamo nulla
+    console.warn('Orientation lock error:', err);
+  }
+}
+
+function unlockOrientation() {
+  try {
+    if (screen.orientation && screen.orientation.unlock) {
+      screen.orientation.unlock();
+    }
+  } catch (e) { /* ignore */ }
+}
+
+/**
+ * Handler chiamato quando cambia orientamento o dimensione:
+ * - se siamo in landscape, prova lock (se possibile)
+ * - in portrait non forza nulla (richiesto: l'utente non deve essere obbligato a ruotare)
+ */
+function onOrientationOrResize() {
+  lockLandscapeIfPossible();
+}
+
+// ===================== EVENTI UI =====================
+function markUserInteracted() {
+  if (!userInteracted) {
+    userInteracted = true;
+    // Se l'utente interagisce e siamo già in landscape, prova subito a bloccare.
+    lockLandscapeIfPossible();
+  }
+}
+
+// Gesture generica: un tap sul body è sufficiente come "user interaction"
+document.addEventListener('pointerdown', markUserInteracted, { passive: true });
+
+// Reset: azzera e riparte
+document.getElementById('btn-reset').addEventListener('click', function() {
+  markUserInteracted();
+  totalSeconds = 0;
+  startTimer();
+});
+
+// Stop: torna a esercizio.html mantenendo query string
+document.getElementById('btn-stop').addEventListener('click', function() {
+  markUserInteracted();
+  stopInterval();
+  stopWakeLockCycle();
+  unlockOrientation();
+
   const qs = window.location.search || '';
   window.location = 'esercizio.html' + qs;
 });
 
+// Se la tab perde visibilità, riacquisisce il wake lock al ritorno
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    requestWakeLock();
+    lockLandscapeIfPossible();
+  }
+});
+
+// Se cambia orientamento (o resize), aggiorna comportamento lock
+window.addEventListener('orientationchange', onOrientationOrResize);
+window.addEventListener('resize', onOrientationOrResize);
+
+// ===================== AVVIO =====================
 startTimer();
+startWakeLockCycle();
+onOrientationOrResize();
 </script>
 </body>
 </html>

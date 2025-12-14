@@ -4,25 +4,41 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Esercizio</title>
+
+  <!-- UI libs -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
   <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+
+  <style>
+    /* Migliora il tap su mobile per la tabella dei set precedenti */
+    #tbl-prev-sets tbody tr { cursor: pointer; }
+  </style>
 </head>
+
 <body class="bg-light">
 <div class="container py-3">
+  <!-- Header pagina -->
   <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
       <h1 class="h5 mb-0" id="title-ex">Esercizio</h1>
+      <!-- richiesto: niente info "precedente / lavorazione" -->
       <small id="subtitle-date" class="text-muted"></small>
     </div>
+
     <div class="d-flex gap-2">
+      <!-- Rinomina (modale) -->
       <button id="btn-rename-open" class="btn btn-outline-primary btn-sm" title="Rinomina esercizio">
         <i class="bi bi-pencil-square"></i>
       </button>
+
+      <!-- Timer -->
       <button id="btn-timer" class="btn btn-warning btn-sm" title="Timer">
         <i class="bi bi-hourglass-split"></i>
       </button>
+
+      <!-- Torna indietro -->
       <button id="btn-back" class="btn btn-outline-secondary btn-sm" title="Torna">
         <i class="bi bi-arrow-left"></i>
       </button>
@@ -32,6 +48,7 @@
   <!-- Card inserimento reps/peso -->
   <div class="card mb-3">
     <div class="card-body">
+
       <div class="row g-2 mb-2 align-items-center">
         <div class="col-12 col-md-6">
           <label class="form-label">Reps</label>
@@ -41,6 +58,7 @@
             <button class="btn btn-outline-secondary" type="button" id="btn-reps-plus">+</button>
           </div>
         </div>
+
         <div class="col-12 col-md-6">
           <label class="form-label">Peso</label>
           <div class="input-group">
@@ -50,7 +68,10 @@
           </div>
         </div>
       </div>
+
       <button id="btn-save" class="btn btn-success btn-lg w-100 mt-2">Salva set</button>
+
+      <!-- Lasciamo msg-ex per errori (successo -> toast) -->
       <div id="msg-ex" class="mt-2 d-none"></div>
     </div>
   </div>
@@ -58,7 +79,8 @@
   <!-- Card set attuali -->
   <div class="card mb-3">
     <div class="card-body">
-      <h2 class="h6 mb-2">Set eseguiti (lavorazione corrente)</h2>
+      <h2 class="h6 mb-2">Set eseguiti</h2>
+
       <div class="table-responsive">
         <table class="table table-sm" id="tbl-sets">
           <thead>
@@ -78,7 +100,8 @@
   <!-- Card set precedenti (solo lettura) -->
   <div class="card" id="card-prev" style="display:none;">
     <div class="card-body">
-      <h2 class="h6 mb-2">Set precedenti (originario)</h2>
+      <h2 class="h6 mb-2">Set precedenti</h2>
+
       <div class="table-responsive">
         <table class="table table-sm" id="tbl-prev-sets">
           <thead>
@@ -92,6 +115,22 @@
           <tbody></tbody>
         </table>
       </div>
+
+      <div class="small text-muted mt-2">
+        Tocca una riga per copiare reps/peso nei campi sopra.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast container (successo "Set salvato") -->
+<div class="toast-container position-fixed bottom-0 end-0 p-3">
+  <div id="toastSaved" class="toast text-bg-success border-0" role="status" aria-live="polite" aria-atomic="true">
+    <div class="d-flex">
+      <div class="toast-body">
+        Set salvato ✅
+      </div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Chiudi"></button>
     </div>
   </div>
 </div>
@@ -117,18 +156,26 @@
 </div>
 
 <script>
+/**
+ * Stato pagina
+ */
 let pairs = [];       // set correnti
 let prevPairs = [];   // set precedenti (solo lettura)
-let editIndex = null;
+let editIndex = null; // indice in edit (null = modalità append)
 let viewDate = null;  // data da cui leggo (può essere origin_date)
 let saveDate = null;  // data su cui salvo (lavorazione corrente)
 let activityName = null;
-let originDate = null;
 
+/**
+ * Utility querystring
+ */
 function getQuery(name) {
   return new URLSearchParams(window.location.search).get(name);
 }
 
+/**
+ * Oggi in formato YYYY-MM-DD
+ */
 function todayYMD() {
   const d = new Date();
   const m = String(d.getMonth()+1).padStart(2,'0');
@@ -136,6 +183,9 @@ function todayYMD() {
   return d.getFullYear() + '-' + m + '-' + day;
 }
 
+/**
+ * Controllo login
+ */
 function ensureLogin(cb) {
   $.getJSON('auth.php?action=me').done(function(res) {
     if (!res.logged) window.location = 'login.html';
@@ -143,6 +193,10 @@ function ensureLogin(cb) {
   });
 }
 
+/**
+ * Messaggio inline: lo teniamo solo per errori/avvisi.
+ * (Successo salvataggio -> toast)
+ */
 function showMsg(msg, isError) {
   $('#msg-ex')
     .removeClass('d-none alert-success alert-danger')
@@ -150,6 +204,36 @@ function showMsg(msg, isError) {
     .text(msg);
 }
 
+/**
+ * Toast "Set salvato"
+ */
+function showSavedToast() {
+  const el = document.getElementById('toastSaved');
+  const t = bootstrap.Toast.getOrCreateInstance(el, { delay: 2000 });
+  t.show();
+}
+
+/**
+ * Salva su server i set correnti per la data di lavorazione
+ */
+function savePairsToServer(cb) {
+  $.post('api.php?action=saveExercisePairs', {
+    date: saveDate,
+    activity: activityName,
+    pairs: JSON.stringify(pairs)
+  }).done(function(res) {
+    if (res.success) cb(true);
+    else cb(false, res.error || 'Errore');
+  }).fail(function(xhr) {
+    cb(false, xhr.responseText || 'Errore HTTP');
+  });
+}
+
+/**
+ * Render tabella set correnti:
+ * - verde (table-success) se reps o peso sono > del set precedente alla stessa posizione
+ * - giallo (table-warning) se la riga è in edit (anche se sarebbe verde)
+ */
 function renderPairs() {
   const tbody = $('#tbl-sets tbody');
   tbody.empty();
@@ -157,20 +241,18 @@ function renderPairs() {
   pairs.forEach(function(p, idx) {
     const tr = $('<tr>');
 
-    // confronto con set precedente (se esiste stessa posizione)
+    // 1) Calcolo miglioramento vs storico (stessa posizione)
     let improved = false;
     if (prevPairs && prevPairs[idx]) {
       const prev = prevPairs[idx];
-      if ((p.reps > prev.reps) || (p.weight > prev.weight)) {
-        improved = true;
-      }
+      if ((p.reps > prev.reps) || (p.weight > prev.weight)) improved = true;
     }
 
-    if (improved) {
-      tr.addClass('table-success'); // highlight verde se migliorato
-    }
+    // 2) Classi: l'edit deve "vincere" sul verde
     if (editIndex === idx) {
-      tr.addClass('table-primary'); // evidenzia riga in edit
+      tr.addClass('table-warning');
+    } else if (improved) {
+      tr.addClass('table-success');
     }
 
     tr.append($('<td>').text(idx + 1));
@@ -181,6 +263,7 @@ function renderPairs() {
       .addClass('btn btn-sm btn-outline-primary me-1')
       .text('Edit')
       .on('click', function() {
+        // Metti in edit e precompila i campi
         editIndex = idx;
         $('#txt-reps').val(p.reps);
         $('#txt-weight').val(p.weight);
@@ -192,6 +275,7 @@ function renderPairs() {
       .text('Cancella')
       .on('click', function() {
         if (!confirm('Cancellare questo set?')) return;
+
         pairs.splice(idx, 1);
         savePairsToServer(function(ok, err) {
           if (!ok) {
@@ -207,6 +291,11 @@ function renderPairs() {
   });
 }
 
+/**
+ * Render tabella set storici:
+ * - click sulla riga copia reps/peso nei campi (per inserire rapidamente set simile)
+ * - due bottoni invisibili per allineare la colonna "Azioni" con quella dei set correnti
+ */
 function renderPrevPairs() {
   const card = $('#card-prev');
   const tbody = $('#tbl-prev-sets tbody');
@@ -219,11 +308,17 @@ function renderPrevPairs() {
 
   prevPairs.forEach(function(p, idx) {
     const tr = $('<tr>');
+
+    // Click riga -> copia reps/peso nei textbox
+    tr.on('click', function() {
+      $('#txt-reps').val(p.reps);
+      $('#txt-weight').val(p.weight);
+    });
+
     tr.append($('<td>').text(idx + 1));
     tr.append($('<td>').text(p.reps));
     tr.append($('<td>').text(p.weight));
 
-    // due tasti invisibili per allineare la colonna azioni
     const btn1 = $('<button>')
       .addClass('btn btn-sm btn-outline-secondary invisible')
       .attr('tabindex', '-1')
@@ -240,76 +335,62 @@ function renderPrevPairs() {
   card.show();
 }
 
-function savePairsToServer(cb) {
-  $.post('api.php?action=saveExercisePairs', {
-    date: saveDate,
-    activity: activityName,
-    pairs: JSON.stringify(pairs)
-  }).done(function(res) {
-    if (res.success) cb(true);
-    else cb(false, res.error || 'Errore');
-  }).fail(function(xhr) {
-    cb(false, xhr.responseText || 'Errore HTTP');
-  });
-}
-
 $(function() {
-  // se arrivo dal timer con valori in query, li rimetto subito nei campi
+  /**
+   * Se arrivo dal timer con reps/weight in query string, ripopolo i campi.
+   * (serve per mantenere i valori identici al ritorno dal timer)
+   */
   const repsFromQuery = getQuery('reps');
   const weightFromQuery = getQuery('weight');
-  if (repsFromQuery !== null && repsFromQuery !== '') {
-    $('#txt-reps').val(repsFromQuery);
-  }
-  if (weightFromQuery !== null && weightFromQuery !== '') {
-    $('#txt-weight').val(weightFromQuery);
-  }
+  if (repsFromQuery !== null && repsFromQuery !== '') $('#txt-reps').val(repsFromQuery);
+  if (weightFromQuery !== null && weightFromQuery !== '') $('#txt-weight').val(weightFromQuery);
 
   ensureLogin(function() {
+    // Lettura esercizio dalla query string
     const exParam = getQuery('ex');
     if (!exParam) {
       showMsg('Parametro esercizio mancante', true);
       return;
     }
+
     activityName = decodeURIComponent(exParam).replace(/_/g, ' ');
 
-    const dateParam   = getQuery('date');
-    const workoutRef  = getQuery('workoutRef');
+    // Gestione date:
+    // - workoutRef (storico) carica da refDate ma salva su oggi (o su date=... se presente)
+    // - altrimenti lavora sulla data corrente
+    const dateParam  = getQuery('date');
+    const workoutRef = getQuery('workoutRef');
 
     if (workoutRef) {
-      const ref        = workoutRef;
-      const refDate    = ref.slice(0,4) + '-' + ref.slice(4,6) + '-' + ref.slice(6,8);
-      viewDate         = refDate;
-      saveDate         = dateParam || todayYMD();
+      const refDate = workoutRef.slice(0,4) + '-' + workoutRef.slice(4,6) + '-' + workoutRef.slice(6,8);
+      viewDate = refDate;
+      saveDate = dateParam || todayYMD();
     } else {
       saveDate = dateParam || todayYMD();
       viewDate = saveDate;
     }
 
     $('#title-ex').text(activityName);
+    $('#subtitle-date').text(''); // richiesto: niente info
 
+    // Carico i set correnti + set storici (prev_pairs)
     $.getJSON(
       'api.php?action=getExercise&date=' + encodeURIComponent(viewDate) +
       '&activity=' + encodeURIComponent(activityName)
     ).done(function(res) {
-      pairs      = res.pairs || [];
-      prevPairs  = res.prev_pairs || [];
-      originDate = res.origin_date || viewDate;
-
-      // Niente più testo "Precedente / Lavorazione"
-      $('#subtitle-date').text('');
-
+      pairs     = res.pairs || [];
+      prevPairs = res.prev_pairs || [];
       renderPairs();
       renderPrevPairs();
     });
 
+    // Torna a currentworkout (come prima)
     $('#btn-back').on('click', function() {
-      const qs = window.location.search || '';
       window.location = 'currentworkout.html';
     });
 
+    // Timer: passa reps/weight correnti in query string
     $('#btn-timer').on('click', function() {
-      // porta con sé tutti i parametri della query string corrente
-      // arricchiti con i valori attuali di reps e peso
       const params = new URLSearchParams(window.location.search);
       params.set('reps', $('#txt-reps').val() || '');
       params.set('weight', $('#txt-weight').val() || '');
@@ -320,8 +401,7 @@ $(function() {
     // Apertura modale rinomina
     $('#btn-rename-open').on('click', function() {
       $('#txt-rename').val(activityName);
-      const modal = new bootstrap.Modal(document.getElementById('modalRename'));
-      modal.show();
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('modalRename')).show();
     });
 
     // Conferma rinomina
@@ -346,6 +426,7 @@ $(function() {
           return;
         }
 
+        // Aggiorno client e ricarico mantenendo i parametri
         activityName = newName;
         $('#title-ex').text(activityName);
 
@@ -359,22 +440,24 @@ $(function() {
     });
   });
 
-  // Pulsanti +/- per reps
+  /**
+   * Reps +/- (semplice e veloce per mobile)
+   */
   $('#btn-reps-minus').on('click', function() {
     let v = parseInt($('#txt-reps').val(), 10);
     if (isNaN(v)) v = 0;
-    v = Math.max(0, v - 1);
-    $('#txt-reps').val(v);
+    $('#txt-reps').val(Math.max(0, v - 1));
   });
 
   $('#btn-reps-plus').on('click', function() {
     let v = parseInt($('#txt-reps').val(), 10);
     if (isNaN(v)) v = 0;
-    v++;
-    $('#txt-reps').val(v);
+    $('#txt-reps').val(v + 1);
   });
 
-  // Pulsanti +/- per peso
+  /**
+   * Peso +/- (click: +/-1; longpress su touch: +/-10 ripetuto)
+   */
   function changeWeight(delta) {
     let v = parseFloat($('#txt-weight').val());
     if (isNaN(v)) v = 0;
@@ -382,33 +465,32 @@ $(function() {
     $('#txt-weight').val(v.toFixed(1));
   }
 
-  // Click normale (desktop + tap veloce su mobile)
   $('#btn-weight-plus').on('click',  () => changeWeight(+1));
   $('#btn-weight-minus').on('click', () => changeWeight(-1));
 
-  // Long-press solo su device touch
   const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
   if (isTouchDevice) {
-    const PRESS_INTERVAL = 500; // ms per longpress e ripetizione
+    const PRESS_INTERVAL = 500;
 
     function setupLongPress(selector, deltaLong) {
       let pressTimer = null;
       let repeatTimer = null;
       const $btn = $(selector);
+
       function startPress() {
         pressTimer = setTimeout(() => {
           changeWeight(deltaLong);
-          repeatTimer = setInterval(() => {
-            changeWeight(deltaLong);
-          }, PRESS_INTERVAL);
+          repeatTimer = setInterval(() => changeWeight(deltaLong), PRESS_INTERVAL);
         }, PRESS_INTERVAL);
       }
+
       function endPress() {
         clearTimeout(pressTimer);
         clearInterval(repeatTimer);
         pressTimer = null;
         repeatTimer = null;
       }
+
       $btn.on('touchstart', startPress);
       $btn.on('touchend touchcancel', endPress);
     }
@@ -417,16 +499,26 @@ $(function() {
     setupLongPress('#btn-weight-minus', -10);
   }
 
-  // Salvataggio set
+  /**
+   * Salvataggio set:
+   * - se non in edit -> append
+   * - se in edit -> update
+   * - al successo: toast per pochi secondi + ricalcolo classi (edit torna null, riga torna verde se migliorata)
+   */
   $('#btn-save').on('click', function() {
+    // Pulisci eventuale errore precedente (non tocco i toast)
+    $('#msg-ex').addClass('d-none');
+
     const reps   = parseInt($('#txt-reps').val(), 10);
     const weight = parseFloat($('#txt-weight').val());
+
     if (isNaN(reps) || reps <= 0 || isNaN(weight) || weight < 0) {
       showMsg('Valori non validi', true);
       return;
     }
 
     const newSet = { reps: reps, weight: weight };
+
     if (editIndex === null) {
       pairs.push(newSet);
     } else {
@@ -438,9 +530,13 @@ $(function() {
         showMsg(err || 'Errore salvataggio', true);
         return;
       }
+
+      // Esci dalla modalità edit: renderPairs rimetterà il verde dove serve
       editIndex = null;
       renderPairs();
-      showMsg('Set salvato', false);
+
+      // Richiesto: toast breve invece di scrivere "salvato" nella pagina
+      showSavedToast();
     });
   });
 });

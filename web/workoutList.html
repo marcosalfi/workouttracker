@@ -15,10 +15,6 @@
   <h1 class="h4 mb-0">I tuoi workout</h1>
 
   <div class="d-flex gap-3">
-    <!-- Fullscreen -->
-    <button id="btn-fullscreen" class="btn btn-sm btn-dark" title="Fullscreen">
-      <i class="bi bi-arrows-fullscreen"></i>
-    </button>
 
     <!-- Logout -->
     <button id="btn-logout" class="btn btn-sm btn-outline-danger" title="Logout">
@@ -52,18 +48,6 @@
 </div>
 
 <script>
-function toggleFullScreen() {
-  if (!document.fullscreenElement) {
-    // Entra in fullscreen
-    document.documentElement.requestFullscreen().catch(err => {
-      console.warn("Fullscreen error:", err);
-    });
-  } else {
-    // Esce dal fullscreen
-    document.exitFullscreen();
-  }
-}
-
 
 function todayYMD() {
   const d = new Date();
@@ -197,13 +181,10 @@ $(function() {
     window.location = 'currentworkout.html';
   });
   
-  $('#btn-fullscreen').on('click', function() {
-	  toggleFullScreen();
-	});
 
   $('#btn-logout').on('click', function() {
     $.getJSON('auth.php?action=logout', function() {
-      window.location = 'login.html';
+      window.location = 'index.html';
     });
   });
 });
