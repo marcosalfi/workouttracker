@@ -503,24 +503,40 @@ function handleSaveExercisePairs($logCsv)
 
 function handleDeleteExercise($logCsv)
 {
-    $date = $_POST['date'] ?? '';
+    $date     = isset($_POST['date']) ? normalizeDate($_POST['date']) : '';
     $activity = trim($_POST['activity'] ?? '');
+
     if ($date === '' || $activity === '') {
         http_response_code(400);
         echo json_encode(['error' => 'Missing date or activity']);
         return;
     }
-    $date = normalizeDate($date);
 
     $rows = [];
+    $deleted = false;
+
     if (($fh = fopen($logCsv, 'r')) !== false) {
-        $header = fgetcsv($fh, 0, ';');
+        $header = fgetcsv($fh, 0, ';'); // header
+
         while (($row = fgetcsv($fh, 0, ';')) !== false) {
-            if (!($row[1] === $date && $row[2] === $activity)) {
-                $rows[] = $row;
+            // upgrade righe vecchie
+            if (count($row) < 6) {
+                $row = array_pad($row, 6, '');
+                if ($row[2] === '') $row[2] = $row[1]; // origin_date = date
             }
+            // schema: 0=id,1=date,2=origin_date,3=activity,4=pairs,5=prev_pairs
+            if ($row[1] === $date && $row[3] === $activity) {
+                $deleted = true;
+                continue; // SALTA la riga da eliminare
+            }
+
+            $rows[] = $row;
         }
         fclose($fh);
+    } else {
+        http_response_code(500);
+        echo json_encode(['error' => 'Cannot open log CSV']);
+        return;
     }
 
     $fh = fopen($logCsv, 'w');
@@ -529,13 +545,14 @@ function handleDeleteExercise($logCsv)
         echo json_encode(['error' => 'Cannot write log CSV']);
         return;
     }
+
     fputcsv($fh, ['id','date','origin_date','activity','pairs','prev_pairs'], ';');
     foreach ($rows as $row) {
         fputcsv($fh, $row, ';');
     }
     fclose($fh);
 
-    echo json_encode(['success' => true]);
+    echo json_encode(['success' => true, 'deleted' => $deleted]);
 }
 
 function handleRenameExercise($logCsv)
