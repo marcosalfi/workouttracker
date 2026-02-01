@@ -1,0 +1,9 @@
+nel ricopiare un workout se pairs è vuota ricopia il valore di prev_pairs
+possibilita' di spostare un esercizio piu' in alto nella lista del giorno 
+title per workout 
+nella lista workout mostrare giorno a tre lettere e title 
+backend api.php?action=listWorkoutDates esporre title e limitare a 20 record 
+database sqllite per i dati 
+sqllite - tabella con elenco degli esercizi 
+api - helper per creare nuovo sqllite in area per ogni utente con tabella con elenco degli esercizi  
+python per copiare i dati da csv a sqllite
