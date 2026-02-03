@@ -418,15 +418,14 @@ $(function() {
 
       $.post('api.php?action=renameExercise', {
         date: saveDate,
-        old_activity: activityName,
-        new_activity: newName
+        old_name: activityName,
+        new_name: newName
       }).done(function(res) {
         if (!res.success) {
           showMsg(res.error || 'Errore rinomina esercizio', true);
           return;
         }
 
-        // Aggiorno client e ricarico mantenendo i parametri
         activityName = newName;
         $('#title-ex').text(activityName);
 
@@ -437,6 +436,7 @@ $(function() {
       }).fail(function(xhr) {
         showMsg(xhr.responseText || 'Errore HTTP nella rinomina', true);
       });
+
     });
   });
 

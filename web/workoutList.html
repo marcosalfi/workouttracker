@@ -36,6 +36,7 @@
           <tr>
             <th style="width: 4rem;">#</th>
             <th>Data</th>
+            <th>Titolo</th>
             <th class="text-end">Azioni</th>
           </tr>
           </thead>
@@ -64,6 +65,22 @@ function ensureLogin(cb) {
       cb(res);
     }
   });
+}
+
+// Giorni settimana in italiano (3 lettere)
+const WEEKDAYS_IT = ['dom', 'lun', 'mar', 'mer', 'gio', 'ven', 'sab'];
+
+// YYYY-MM-DD -> "sab 01/02/2026"
+function formatDateIT(ymd) {
+  const d = parseYMD(ymd);
+  if (!d) return ymd;
+
+  const wd = WEEKDAYS_IT[d.getDay()];
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yyyy = d.getFullYear();
+
+  return wd + ' ' + dd + '/' + mm + '/' + yyyy;
 }
 
 // YYYY-MM-DD -> Date (locale, ma ci basta per ordinare)
@@ -121,9 +138,10 @@ function loadDates() {
   $('#msg-list').addClass('d-none');
 
   $.getJSON('api.php?action=listWorkoutDates')
-    .done(function(res) {
-      let dates = res.dates || [];
-      if (dates.length === 0) {
+  .done(function(res) {
+      let items = res.items || [];
+
+      if (!items || items.length === 0) {
         $('#msg-list')
           .removeClass('d-none alert-danger')
           .addClass('alert alert-info')
@@ -133,35 +151,47 @@ function loadDates() {
 
       const today = todayYMD();
 
-      // Mappa: data -> indice (1..n) all'interno della settimana
-      const weeklyIndex = buildWeeklyIndexMap(dates);
-
-      // Ordina le date dal più recente al meno recente
-      dates.sort(function(a, b) {
-        return b.localeCompare(a);
+      // Ordina per data DESC
+      items.sort(function(a, b) {
+        return b.date.localeCompare(a.date);
       });
 
-      dates.forEach(function(d) {
+      // Serve solo per l’indice settimanale
+      const dates = items.map(it => it.date);
+      const weeklyIndex = buildWeeklyIndexMap(dates);
+
+      items.forEach(function(it) {
+        const d = it.date;
+        const t = it.title || '';
+        const c = it.count || 0;
+
         const tr = $('<tr>');
 
         // # settimanale
-        const idx = weeklyIndex[d] || '';
-        tr.append($('<td>').text(idx));
+        tr.append($('<td>').text(weeklyIndex[d] || ''));
 
-        // Data
-        tr.append($('<td>').text(d));
+        // Data formattata IT + weekday
+        tr.append($('<td>').text(formatDateIT(d)));
 
-        // Pulsante Apri (oggi -> currentworkout, altrimenti workoutView)
+        // Titolo + count
+        tr.append(
+          $('<td>').html(
+            $('<div>').append(
+              $('<div>').text(t),
+              $('<small class="text-muted">').text(c + ' esercizi')
+            )
+          )
+        );
+
+        // Azioni
         const btn = $('<button>')
           .addClass('btn btn-sm btn-primary')
           .text('Apri')
           .on('click', function() {
             if (d === today) {
-              // Oggi: vai in modalità edit direttamente su currentworkout
               const ref = d.replace(/-/g, '');
               window.location = 'currentworkout.html?workoutRef=' + encodeURIComponent(ref);
             } else {
-              // Giorni passati: sola visualizzazione
               window.location = 'workoutView.html?date=' + encodeURIComponent(d);
             }
           });
@@ -170,6 +200,7 @@ function loadDates() {
         $('#tbl-dates tbody').append(tr);
       });
     });
+
 }
 
 $(function() {

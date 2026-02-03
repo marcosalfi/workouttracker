@@ -30,6 +30,13 @@ function getQuery(name) {
   return p.get(name);
 }
 
+function todayYMD() {
+  const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return d.getFullYear() + '-' + m + '-' + day;
+}0
+
 function ensureLogin(cb) {
   $.getJSON('auth.php?action=me').done(function(res) {
     if (!res.logged) window.location = 'login.html';
@@ -84,9 +91,25 @@ $(function() {
     });
 
     $('#btn-start').on('click', function() {
-      var ref = date.replace(/-/g, '');
-      window.location = 'currentworkout.html?workoutRef=' + encodeURIComponent(ref);
-    });
+        const target = todayYMD();     // oggi
+        const source = date;          // giorno che stai visualizzando
+
+        $('#btn-start').prop('disabled', true);
+        $('#msg').addClass('d-none').removeClass('alert-danger alert-success');
+
+        $.post('api.php?action=cloneWorkout', { source: source, target: target })
+          .done(function(res) {
+            // vai a modificare il workout di oggi
+            window.location = 'currentworkout.html';
+          })
+          .fail(function(xhr) {
+            $('#btn-start').prop('disabled', false);
+            $('#msg')
+              .removeClass('d-none alert-success')
+              .addClass('alert alert-danger')
+              .text('Errore replica: ' + (xhr.responseText || ''));
+          });
+      });
   });
 });
 </script>

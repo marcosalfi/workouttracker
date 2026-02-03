@@ -1,305 +1,295 @@
 <?php
 // api.php
 /*
-0 => id
-1 => date          (data di lavorazione / attuale)
-2 => origin_date   (data da cui è stato generato il workout)
-3 => activity
-4 => pairs         (coppie reps@peso attuali)
-5 => prev_pairs    (coppie reps@peso precedenti, per confronto)
+php 7.x
+
+Compatibilità: se il CSV è nel vecchio formato (senza title), l'API lo “upgrada” in memoria
+e, quando riscrive, usa sempre l'header completo.
 */
 header('Content-Type: application/json; charset=utf-8');
-require_once __DIR__ . '/common.php';
 
-$user = requireLogin();
+require_once __DIR__ . '/sqlite_helper.php';
+$BASE_DIR = __DIR__;
 
-$action = $_GET['action'] ?? ($_POST['action'] ?? null);
-if ($action === null) {
-    echo json_encode(['error' => 'No action']);
+/* ===================== LOG ===================== */
+function apiLog($msg, $level = 'INFO')
+{
+    $line = sprintf("[%s][%s] %s\n", date('Y-m-d H:i:s'), $level, $msg);
+    @file_put_contents(__DIR__ . '/apilog.txt', $line, FILE_APPEND | LOCK_EX);
+}
+
+
+function isAbsolutePath($path)
+{
+    $path = (string)$path;
+    if ($path === '') return false;
+
+    // Linux/Unix
+    if ($path[0] === '/') return true;
+
+    // Windows (C:\...)
+    if (preg_match('/^[A-Za-z]:[\\\\\\/]/', $path)) return true;
+
+    // UNC path (\\server\share)
+    if (substr($path, 0, 2) === '\\\\') return true;
+
+    return false;
+}
+
+function resolvePath($path, $baseDir)
+{
+    $path = trim((string)$path);
+    if ($path === '') return rtrim($baseDir, '/\\') . '/';
+
+    if (isAbsolutePath($path)) return $path;
+
+    return rtrim($baseDir, '/\\') . '/' . ltrim($path, '/\\');
+}
+
+/* ===================== HELPERS ===================== */
+function normalizeDate($s)
+{
+    $s = trim((string)$s);
+    if ($s === '') return '';
+    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $s)) return $s;
+    $t = strtotime($s);
+    return $t ? date('Y-m-d', $t) : '';
+}
+
+function parsePairs($s)
+{
+    $out = [];
+    foreach (explode('|', trim((string)$s)) as $p) {
+        if (strpos($p, '@') === false) continue;
+        [$r,$w] = explode('@', $p, 2);
+        $out[] = ['reps'=>(int)$r, 'weight'=>(float)$w];
+    }
+    return $out;
+}
+
+function pairsToString(array $pairs)
+{
+    $out = [];
+    foreach ($pairs as $p) {
+        if (!isset($p['reps'],$p['weight'])) continue;
+        $out[] = (int)$p['reps'].'@'.(float)$p['weight'];
+    }
+    return implode('|', $out);
+}
+
+function newId()
+{
+    return time().'_'.mt_rand(1000,9999);
+}
+
+/* ===================== CONFIG ===================== */
+$configPath = $BASE_DIR .'/config.json';
+if (!file_exists($configPath)) {
+    apiLog('config.json not found: ' . $configPath, 'ERROR');
+    echo json_encode(['error'=>'Missing config.json']);
     exit;
 }
 
-$logCsv  = $user['log_csv'];
-$routineCsv = $user['workout_routine_csv'];
+$configRaw = file_get_contents($configPath);
+$config = json_decode($configRaw, true);
+if (!is_array($config)) {
+    apiLog('Invalid config.json in : ' . $configPath, 'ERROR');
+    echo json_encode(['error' => 'Invalid config.json']);
+    exit;
+}
+// auth (opzionale): se non passi credenziali usa users[0]
+$username = $_GET['username'] ?? ($_POST['username'] ?? '');
+$password = $_GET['password'] ?? ($_POST['password'] ?? '');
 
-ensureLogCsvExists($logCsv);
+$userCfg = null;
+if (isset($config['users']) && is_array($config['users'])) {
+    if ($username === '' && $password === '') {
+        $userCfg = $config['users'][0] ?? null;
+    } else {
+        foreach ($config['users'] as $u) {
+            if (!is_array($u)) continue;
+            if (($u['username'] ?? '') === $username && ($u['password'] ?? '') === $password) {
+                $userCfg = $u;
+                break;
+            }
+        }
+    }
+}
+
+if (!is_array($userCfg)) {
+    http_response_code(401);
+    echo json_encode(['error' => 'Unauthorized']);
+    exit;
+}
+
+// database path relativo a BASE_DIR (cartella di api.php)
+$dbPath = resolvePath(($userCfg['database'] ?? 'data/workout.db'), $BASE_DIR);
+
+apiLog('BASE_DIR: ' . $BASE_DIR, 'DEBUG');
+apiLog('configPath: ' . $configPath, 'DEBUG');
+apiLog('dbPath: ' . $dbPath, 'DEBUG');
+
+/* ===================== DB ===================== */
+$db = new SqliteDb();
+$db->init($dbPath);
+ensureSchema($db);
+
+/* ===================== ACTION ===================== */
+$action = $_GET['action'] ?? $_POST['action'] ?? null;
+if (!$action) {
+    echo json_encode(['error'=>'No action']);
+    exit;
+}
 
 switch ($action) {
+
     case 'listActivities':
-        handleListActivities($routineCsv);
+        echo json_encode([
+            'items'=>$db->queryDt(
+                "SELECT id, activity, activity_type FROM workout_activies ORDER BY activity"
+            )
+        ], JSON_UNESCAPED_UNICODE);
         break;
-    case 'addLog':
-        handleAddLog($logCsv);
-        break;
-    case 'listLog':
-        handleListLog($logCsv);
-        break;
-    case 'deleteLog':
-        handleDeleteLog($logCsv);
-        break;
+
     case 'listWorkoutDates':
-        handleListWorkoutDates($logCsv);
-        break;
-    case 'getWorkout':
-        handleGetWorkout($logCsv);
+        echo json_encode([
+            'items'=>$db->queryDt(
+                "SELECT wo_date AS date, MIN(title) AS title, COUNT(*) AS count
+                 FROM workout_log
+                 GROUP BY wo_date
+                 ORDER BY wo_date DESC
+                 LIMIT 20"
+            )
+        ], JSON_UNESCAPED_UNICODE);
         break;
     case 'cloneWorkout':
-        handleCloneWorkout($logCsv);
+        handleCloneWorkout($db); 
         break;
+    
+    case 'getWorkout':
+        $date = normalizeDate($_GET['date'] ?? '');
+        $rows = $db->queryDt(
+            "SELECT id, title, activity, pairs, prev_pairs, origin_date, activity_order
+             FROM workout_log
+             WHERE wo_date = :d
+             ORDER BY activity_order, activity",
+            [':d'=>$date]
+        );
+
+        foreach ($rows as &$r) {
+            $r['pairs'] = parsePairs($r['pairs']);
+            $r['prev_pairs'] = parsePairs($r['prev_pairs']);
+        }
+
+        echo json_encode([
+            'date'=>$date,
+            'title'=>$rows[0]['title'] ?? '',
+            'items'=>$rows
+        ], JSON_UNESCAPED_UNICODE);
+        break;
+
+    case 'renameExercise':
+        handleRenameExercise($db);
+        break;        
+
     case 'getExercise':
-        handleGetExercise($logCsv);
-        break;
+        $date = normalizeDate($_GET['date'] ?? '');
+        $activity = trim($_GET['activity'] ?? '');
+
+        if ($date === '' || $activity === '') {
+            echo json_encode(['error' => 'Missing date or activity']);
+            break;
+        }
+
+        $rows = $db->queryDt(
+            "SELECT pairs, prev_pairs
+            FROM workout_log
+            WHERE wo_date = :d AND activity = :a
+            ORDER BY activity_order, id
+            LIMIT 1",
+            [':d' => $date, ':a' => $activity]
+        );
+
+        $pairs = [];
+        $prevPairs = [];
+        if (count($rows) > 0) {
+            $pairs = parsePairs($rows[0]['pairs'] ?? '');
+            $prevPairs = parsePairs($rows[0]['prev_pairs'] ?? '');
+        }
+
+        echo json_encode([
+            'date' => $date,
+            'activity' => $activity,
+            'pairs' => $pairs,
+            'prev_pairs' => $prevPairs
+        ], JSON_UNESCAPED_UNICODE);
+        break;        
+
     case 'saveExercisePairs':
-        handleSaveExercisePairs($logCsv);
+        $date = normalizeDate($_POST['date'] ?? '');
+        $activity = trim($_POST['activity'] ?? '');
+        $pairs = json_decode($_POST['pairs'] ?? '[]', true);
+
+        $db->query(
+            "INSERT OR REPLACE INTO workout_log
+             (id,wo_date,origin_date,title,activity,pairs,prev_pairs,activity_order)
+             VALUES
+             (:id,:d,:o,:t,:a,:p,:pp,:ord)",
+            [
+                ':id'=>newId(),
+                ':d'=>$date,
+                ':o'=>$date,
+                ':t'=>$_POST['title'] ?? '',
+                ':a'=>$activity,
+                ':p'=>pairsToString($pairs),
+                ':pp'=>'',
+                ':ord'=>$_POST['activity_order'] ?? null
+            ]
+        );
+
+        echo json_encode(['success'=>true]);
         break;
-    case 'deleteExercise':
-        handleDeleteExercise($logCsv);
-        break;
-	case 'renameExercise':
-        handleRenameExercise($user['log_csv']);
-        break;
+
     default:
-        echo json_encode(['error' => 'Unknown action']);
+        echo json_encode(['error'=>'Unknown action']);
 }
 
-// ---------- Handlers ----------
-
-function handleListActivities($routineCsv)
+function handleRenameExercise(SqliteDb $db)
 {
-    $activities = [];
-    if (!file_exists($routineCsv)) {
-        echo json_encode(['activities' => []]);
-        return;
-    }
+    $date = normalizeDate($_POST['date'] ?? ($_GET['date'] ?? ''));
+    $oldName = trim($_POST['old_name'] ?? ($_POST['activity'] ?? ($_GET['activity'] ?? '')));
+    $newName = trim($_POST['new_name'] ?? ($_GET['new_name'] ?? ''));
 
-    if (($fh = fopen($routineCsv, 'r')) !== false) {
-        $header = fgetcsv($fh, 0, ',');
-        if ($header === false) {
-            fclose($fh);
-            echo json_encode(['activities' => []]);
-            return;
-        }
-        $activityIndex = array_search('activity', $header);
-        if ($activityIndex === false) {
-            fclose($fh);
-            echo json_encode(['activities' => []]);
-            return;
-        }
-
-        while (($row = fgetcsv($fh, 0, ',')) !== false) {
-            if (!isset($row[$activityIndex])) continue;
-            $act = trim($row[$activityIndex]);
-            if ($act !== '' && !in_array($act, $activities, true)) {
-                $activities[] = $act;
-            }
-        }
-        fclose($fh);
-    }
-
-    sort($activities);
-    echo json_encode(['activities' => $activities]);
-}
-
-function handleAddLog($logCsv)
-{
-    $date     = $_POST['date'] ?? '';
-    $activity = trim($_POST['activity'] ?? '');
-    $pairsJson = $_POST['pairs'] ?? '[]';
-
-    if ($date === '' || $activity === '') {
+    if ($date === '' || $oldName === '' || $newName === '') {
         http_response_code(400);
-        echo json_encode(['error' => 'Missing date or activity']);
+        echo json_encode(['error' => 'Missing date/old_name/new_name']);
         return;
     }
 
-    $pairsArr = json_decode($pairsJson, true);
-    if (!is_array($pairsArr) || count($pairsArr) === 0) {
-        http_response_code(400);
-        echo json_encode(['error' => 'No reps/weight pairs']);
-        return;
-    }
+    // rinomina SOLO per quel giorno
+    $n = $db->query(
+        "UPDATE workout_log
+         SET activity = :new
+         WHERE wo_date = :d AND activity = :old;",
+        [
+            ':new' => $newName,
+            ':d'   => $date,
+            ':old' => $oldName
+        ]
+    );
 
-    $parts = [];
-    foreach ($pairsArr as $p) {
-        $reps = isset($p['reps']) ? (int)$p['reps'] : 0;
-        $weight = isset($p['weight']) ? (float)$p['weight'] : 0;
-        if ($reps > 0) {
-            $parts[] = $reps . '@' . $weight;
-        }
-    }
-    if (count($parts) === 0) {
-        http_response_code(400);
-        echo json_encode(['error' => 'Invalid pairs']);
-        return;
-    }
-
-    $pairsStr = implode('|', $parts);
-    $id = time() . '_' . mt_rand(1000, 9999);
-
-    $fh = fopen($logCsv, 'a');
-    if (!$fh) {
-        http_response_code(500);
-        echo json_encode(['error' => 'Cannot open log CSV']);
-        return;
-    }
-    fputcsv($fh, [$id, $date, $activity, $pairsStr], ';');
-    fclose($fh);
-
-    echo json_encode(['success' => true, 'id' => $id]);
-}
-
-function handleListLog($logCsv)
-{
-    $items = [];
-    if (($fh = fopen($logCsv, 'r')) !== false) {
-        $header = fgetcsv($fh, 0, ';');
-		while (($row = fgetcsv($fh, 0, ';')) !== false) {
-			if (count($row) < 6) continue;
-			$id        = $row[0];
-			$date      = $row[1];
-			$activity  = $row[3];
-			$pairsStr  = $row[4];
-
-			$pairsHuman = [];
-            if ($pairsStr !== '') {
-                $pairs = explode('|', $pairsStr);
-                foreach ($pairs as $p) {
-                    $tmp = explode('@', $p);
-                    $reps = $tmp[0] ?? '';
-                    $weight = $tmp[1] ?? '';
-                    if ($reps !== '') {
-                        $pairsHuman[] = $reps . 'x' . $weight;
-                    }
-                }
-            }
-            $items[] = [
-                'id'       => $id,
-                'date'     => $date,
-                'activity' => $activity,
-                'pairs'    => implode(', ', $pairsHuman)
-            ];
-        }
-        fclose($fh);
-    }
-    echo json_encode(['items' => $items]);
-}
-
-function handleDeleteLog($logCsv)
-{
-    $id = $_POST['id'] ?? '';
-    if ($id === '') {
-        http_response_code(400);
-        echo json_encode(['error' => 'Missing id']);
-        return;
-    }
-
-    $rows = [];
-    if (($fh = fopen($logCsv, 'r')) !== false) {
-        $header = fgetcsv($fh, 0, ';');
-        while (($row = fgetcsv($fh, 0, ';')) !== false) {
-            $rows[] = $row;
-        }
-        fclose($fh);
-    } else {
-        http_response_code(500);
-        echo json_encode(['error' => 'Cannot open log CSV']);
-        return;
-    }
-
-    $newRows = [];
-    foreach ($rows as $r) {
-        if (!isset($r[0]) || $r[0] !== $id) {
-            $newRows[] = $r;
-        }
-    }
-
-    $fh = fopen($logCsv, 'w');
-    if (!$fh) {
-        http_response_code(500);
-        echo json_encode(['error' => 'Cannot write log CSV']);
-        return;
-    }
-    fputcsv($fh, ['id','date','origin_date','activity','pairs','prev_pairs'], ';');
-    foreach ($newRows as $r) {
-        fputcsv($fh, $r, ';');
-    }
-    fclose($fh);
-
-    echo json_encode(['success' => true]);
-}
-
-function handleListWorkoutDates($logCsv)
-{
-    $dates = [];
-    if (($fh = fopen($logCsv, 'r')) !== false) {
-        $header = fgetcsv($fh, 0, ';');
-		while (($row = fgetcsv($fh, 0, ';')) !== false) {
-			if (!isset($row[1])) continue;
-			$date = $row[1];
-            if ($date !== '' && !in_array($date, $dates, true)) {
-                $dates[] = $date;
-            }
-        }
-        fclose($fh);
-    }
-    sort($dates);
-    echo json_encode(['dates' => $dates]);
-}
-
-function handleGetWorkout($logCsv)
-{
-    $date = $_GET['date'] ?? '';
-    if ($date === '') {
-        http_response_code(400);
-        echo json_encode(['error' => 'Missing date']);
-        return;
-    }
-    $date = normalizeDate($date);
-
-    $items = [];
-    if (($fh = fopen($logCsv, 'r')) !== false) {
-        $header = fgetcsv($fh, 0, ';');
-        while (($row = fgetcsv($fh, 0, ';')) !== false) {
-            if (count($row) < 6) continue;
-            $id          = $row[0];
-            $rowDate     = $row[1];
-            $originDate  = $row[2] ?? $rowDate;
-            $activity    = $row[3];
-            $pairsStr    = $row[4];
-
-            if ($rowDate !== $date) continue;
-
-            $pairs = [];
-            if ($pairsStr !== '') {
-                foreach (explode('|', $pairsStr) as $p) {
-                    $tmp    = explode('@', $p);
-                    $reps   = isset($tmp[0]) ? (int)$tmp[0] : 0;
-                    $weight = isset($tmp[1]) ? (float)$tmp[1] : 0;
-                    if ($reps > 0) {
-                        $pairs[] = ['reps' => $reps, 'weight' => $weight];
-                    }
-                }
-            }
-
-            $items[] = [
-                'id'          => $id,
-                'activity'    => $activity,
-                'pairs'       => $pairs,
-                // se ti servirà in UI
-                'origin_date' => $originDate
-            ];
-        }
-        fclose($fh);
-    }
-
-    echo json_encode(['items' => $items]);
+    echo json_encode([
+        'success' => true,
+        'updated' => $n
+    ], JSON_UNESCAPED_UNICODE);
 }
 
 
-function handleCloneWorkout($logCsv)
+
+function handleCloneWorkout(SqliteDb $db)
 {
-    $source = isset($_POST['source']) ? normalizeDate($_POST['source']) : '';
-    $target = isset($_POST['target']) ? normalizeDate($_POST['target']) : '';
+    $source = normalizeDate($_POST['source'] ?? '');
+    $target = normalizeDate($_POST['target'] ?? '');
 
     if ($source === '' || $target === '') {
         http_response_code(400);
@@ -307,313 +297,101 @@ function handleCloneWorkout($logCsv)
         return;
     }
 
-    $rows = [];
-    if (($fh = fopen($logCsv, 'r')) !== false) {
-        $header = fgetcsv($fh, 0, ';');
-        while (($row = fgetcsv($fh, 0, ';')) !== false) {
-            $rows[] = $row;
-        }
-        fclose($fh);
-    } else {
-        http_response_code(500);
-        echo json_encode(['error' => 'Cannot open log CSV']);
+    // righe sorgente
+    $srcRows = $db->queryDt("
+        SELECT title, activity, pairs, prev_pairs, activity_order
+        FROM workout_log
+        WHERE wo_date = :s
+        ORDER BY
+          CASE WHEN activity_order IS NULL THEN 1 ELSE 0 END,
+          activity_order ASC,
+          activity ASC;
+    ", [':s' => $source]);
+
+    if (!$srcRows) {
+        echo json_encode(['success' => false, 'error' => 'Source not found']);
         return;
     }
 
-    foreach ($rows as $row) {
-        if (isset($row[1]) && $row[1] === $target) {
-            echo json_encode(['success' => true, 'skipped' => true]);
-            return;
-        }
+    // titolo del workout sorgente (primo non vuoto)
+    $sourceTitle = '';
+    foreach ($srcRows as $r) {
+        if (trim((string)$r['title']) !== '') { $sourceTitle = (string)$r['title']; break; }
     }
 
-    $newRows = $rows;
-	foreach ($rows as $row) {
-		if (!isset($row[1]) || $row[1] !== $source) continue;
+    $db->begin();
+    try {
+        // 1) cancella target (oggi) PRIMA di replicare
+        $deleted = $db->query("DELETE FROM workout_log WHERE wo_date = :t;", [':t' => $target]);
 
-		// vecchio schema o nuovo: normalizziamo comunque
-		$activity   = $row[3] ?? $row[2];
-		$pairsStr   = $row[4] ?? ($row[3] ?? '');
+        // 2) inserisci replica
+        $added = 0;
+        foreach ($srcRows as $r) {
+            $srcPairs = trim((string)($r['pairs'] ?? ''));
+            $srcPrev  = trim((string)($r['prev_pairs'] ?? ''));
 
-		$newId      = time() . '_' . mt_rand(1000, 9999);
-		$originDate = $source;
-		$newRows[]  = [
-			$newId,        // id
-			$target,       // date (lavorazione corrente)
-			$originDate,   // origin_date
-			$activity,     // activity
-			'',            // pairs (vuote: le farai oggi)
-			$pairsStr      // prev_pairs (storico da confrontare)
-		];
-	}
+            // REGOLA:
+            // se pairs è vuoto/null -> mantieni prev_pairs
+            // altrimenti -> copia pairs in prev_pairs
+            $newPrevPairs = ($srcPairs === '') ? $srcPrev : $srcPairs;
 
-	$fh = fopen($logCsv, 'w');
-	if (!$fh) {
-		http_response_code(500);
-		echo json_encode(['error' => 'Cannot write log CSV']);
-		return;
-	}
-	fputcsv($fh, ['id','date','origin_date','activity','pairs','prev_pairs'], ';');
-	foreach ($newRows as $row) {
-		fputcsv($fh, $row, ';');
-	}
-	fclose($fh);
-    echo json_encode(['success' => true, 'skipped' => false]);
+            $db->query("
+                INSERT INTO workout_log
+                (id, wo_date, origin_date, title, activity, pairs, prev_pairs, activity_order)
+                VALUES
+                (:id, :d, :o, :t, :a, :p, :pp, :ord);
+            ", [
+                ':id'  => newId(),
+                ':d'   => $target,
+                ':o'   => $source,
+                ':t'   => ($sourceTitle !== '' ? $sourceTitle : (string)($r['title'] ?? '')),
+                ':a'   => (string)$r['activity'],
+                ':p'   => '',                 // oggi parti vuoto
+                ':pp'  => $newPrevPairs,      // regola richiesta
+                ':ord' => ($r['activity_order'] === null || $r['activity_order'] === '') ? null : (int)$r['activity_order'],
+            ]);
+
+            $added++;
+        }
+
+        $db->commit();
+
+        echo json_encode([
+            'success' => true,
+            'deleted' => $deleted,
+            'added'   => $added,
+            'source'  => $source,
+            'target'  => $target
+        ], JSON_UNESCAPED_UNICODE);
+
+    } catch (Throwable $e) {
+        $db->rollback();
+        throw $e;
+    }
 }
 
-function handleGetExercise($logCsv)
+
+/* ===================== SCHEMA ===================== */
+function ensureSchema(SqliteDb $db)
 {
-    $date     = $_GET['date'] ?? '';
-    $activity = trim($_GET['activity'] ?? '');
-    if ($date === '' || $activity === '') {
-        http_response_code(400);
-        echo json_encode(['error' => 'Missing date or activity']);
-        return;
-    }
-    $date = normalizeDate($date);
+    $db->query(
+        "CREATE TABLE IF NOT EXISTS workout_log (
+            id TEXT PRIMARY KEY,
+            wo_date TEXT NOT NULL,
+            origin_date TEXT NOT NULL,
+            title TEXT NOT NULL,
+            activity TEXT NOT NULL,
+            pairs TEXT NOT NULL,
+            prev_pairs TEXT,
+            activity_order INTEGER
+        )"
+    );
 
-    $pairs      = [];
-    $prevPairs  = [];
-    $id         = null;
-    $originDate = $date;
-
-    if (($fh = fopen($logCsv, 'r')) !== false) {
-        $header = fgetcsv($fh, 0, ';');
-        while (($row = fgetcsv($fh, 0, ';')) !== false) {
-            if (count($row) < 6) continue;
-            if ($row[1] === $date && $row[3] === $activity) {
-                $id         = $row[0];
-                $originDate = $row[2] ?: $date;
-                $pairsStr   = $row[4];
-                $prevStr    = $row[5];
-
-                if ($pairsStr !== '') {
-                    foreach (explode('|', $pairsStr) as $p) {
-                        $tmp    = explode('@', $p);
-                        $reps   = isset($tmp[0]) ? (int)$tmp[0] : 0;
-                        $weight = isset($tmp[1]) ? (float)$tmp[1] : 0;
-                        if ($reps > 0) {
-                            $pairs[] = ['reps' => $reps, 'weight' => $weight];
-                        }
-                    }
-                }
-
-                if ($prevStr !== '') {
-                    foreach (explode('|', $prevStr) as $p) {
-                        $tmp    = explode('@', $p);
-                        $reps   = isset($tmp[0]) ? (int)$tmp[0] : 0;
-                        $weight = isset($tmp[1]) ? (float)$tmp[1] : 0;
-                        if ($reps > 0) {
-                            $prevPairs[] = ['reps' => $reps, 'weight' => $weight];
-                        }
-                    }
-                }
-                break;
-            }
-        }
-        fclose($fh);
-    }
-
-    echo json_encode([
-        'id'          => $id,
-        'date'        => $date,
-        'origin_date' => $originDate,
-        'activity'    => $activity,
-        'pairs'       => $pairs,
-        'prev_pairs'  => $prevPairs
-    ]);
+    $db->query(
+        "CREATE TABLE IF NOT EXISTS workout_activies (
+            id INTEGER PRIMARY KEY,
+            activity TEXT NOT NULL,
+            activity_type TEXT NOT NULL
+        )"
+    );
 }
-
-
-function handleSaveExercisePairs($logCsv)
-{
-    $date     = isset($_POST['date']) ? normalizeDate($_POST['date']) : '';
-    $activity = trim($_POST['activity'] ?? '');
-    $pairsJson = $_POST['pairs'] ?? '[]';
-
-    if ($date === '' || $activity === '') {
-        http_response_code(400);
-        echo json_encode(['error' => 'Missing date or activity']);
-        return;
-    }
-
-    $pairsArr = json_decode($pairsJson, true);
-    if (!is_array($pairsArr)) {
-        http_response_code(400);
-        echo json_encode(['error' => 'Invalid pairs']);
-        return;
-    }
-
-    $parts = [];
-    foreach ($pairsArr as $p) {
-        $reps   = isset($p['reps']) ? (int)$p['reps'] : 0;
-        $weight = isset($p['weight']) ? (float)$p['weight'] : 0;
-        if ($reps > 0) {
-            $parts[] = $reps . '@' . $weight;
-        }
-    }
-    $pairsStr = implode('|', $parts);
-
-    $rows  = [];
-    $found = false;
-
-    if (($fh = fopen($logCsv, 'r')) !== false) {
-        $header = fgetcsv($fh, 0, ';');
-        while (($row = fgetcsv($fh, 0, ';')) !== false) {
-            if (count($row) < 6) {
-                // upgrade eventuali righe vecchie (4 colonne)
-                $row = array_pad($row, 6, '');
-                if ($row[2] === '') {
-                    $row[2] = $row[1]; // origin_date = date
-                }
-            }
-
-            if ($row[1] === $date && $row[3] === $activity) {
-                $found       = true;
-                // mantieni origin_date e prev_pairs, aggiorna solo pairs
-                $row[4]      = $pairsStr;
-            }
-            $rows[] = $row;
-        }
-        fclose($fh);
-    }
-
-    if (!$found) {
-        $id          = time() . '_' . mt_rand(1000, 9999);
-        $originDate  = $date; // nuovo esercizio, origine = oggi
-        $prevStr     = '';
-        $rows[] = [$id, $date, $originDate, $activity, $pairsStr, $prevStr];
-    }
-
-    $fh = fopen($logCsv, 'w');
-    if (!$fh) {
-        http_response_code(500);
-        echo json_encode(['error' => 'Cannot write log CSV']);
-        return;
-    }
-    fputcsv($fh, ['id','date','origin_date','activity','pairs','prev_pairs'], ';');
-    foreach ($rows as $row) {
-        fputcsv($fh, $row, ';');
-    }
-    fclose($fh);
-
-    echo json_encode(['success' => true]);
-}
-
-
-function handleDeleteExercise($logCsv)
-{
-    $date     = isset($_POST['date']) ? normalizeDate($_POST['date']) : '';
-    $activity = trim($_POST['activity'] ?? '');
-
-    if ($date === '' || $activity === '') {
-        http_response_code(400);
-        echo json_encode(['error' => 'Missing date or activity']);
-        return;
-    }
-
-    $rows = [];
-    $deleted = false;
-
-    if (($fh = fopen($logCsv, 'r')) !== false) {
-        $header = fgetcsv($fh, 0, ';'); // header
-
-        while (($row = fgetcsv($fh, 0, ';')) !== false) {
-            // upgrade righe vecchie
-            if (count($row) < 6) {
-                $row = array_pad($row, 6, '');
-                if ($row[2] === '') $row[2] = $row[1]; // origin_date = date
-            }
-            // schema: 0=id,1=date,2=origin_date,3=activity,4=pairs,5=prev_pairs
-            if ($row[1] === $date && $row[3] === $activity) {
-                $deleted = true;
-                continue; // SALTA la riga da eliminare
-            }
-
-            $rows[] = $row;
-        }
-        fclose($fh);
-    } else {
-        http_response_code(500);
-        echo json_encode(['error' => 'Cannot open log CSV']);
-        return;
-    }
-
-    $fh = fopen($logCsv, 'w');
-    if (!$fh) {
-        http_response_code(500);
-        echo json_encode(['error' => 'Cannot write log CSV']);
-        return;
-    }
-
-    fputcsv($fh, ['id','date','origin_date','activity','pairs','prev_pairs'], ';');
-    foreach ($rows as $row) {
-        fputcsv($fh, $row, ';');
-    }
-    fclose($fh);
-
-    echo json_encode(['success' => true, 'deleted' => $deleted]);
-}
-
-function handleRenameExercise($logCsv)
-{
-    $date        = isset($_POST['date']) ? trim($_POST['date']) : '';
-    $oldActivity = isset($_POST['old_activity']) ? trim($_POST['old_activity']) : '';
-    $newActivity = isset($_POST['new_activity']) ? trim($_POST['new_activity']) : '';
-
-    if ($date === '' || $oldActivity === '' || $newActivity === '') {
-        http_response_code(400);
-        echo json_encode(['error' => 'Missing date or activity']);
-        return;
-    }
-
-    // normalizza la data in formato YYYY-MM-DD se usi già una funzione simile
-    if (function_exists('normalizeDate')) {
-        $date = normalizeDate($date);
-    }
-
-    $rows    = [];
-    $changed = false;
-
-    if (($fh = fopen($logCsv, 'r')) !== false) {
-        $header = fgetcsv($fh, 0, ';');
-        while (($row = fgetcsv($fh, 0, ';')) !== false) {
-            // aggiorna eventuali righe vecchie: porta a 6 colonne
-            if (count($row) < 6) {
-                $row = array_pad($row, 6, '');
-                if ($row[2] === '') {
-                    $row[2] = $row[1]; // origin_date = date
-                }
-            }
-
-            // schema: 0=id,1=date,2=origin_date,3=activity,4=pairs,5=prev_pairs
-            if ($row[1] === $date && $row[3] === $oldActivity) {
-                $row[3] = $newActivity;
-                $changed = true;
-            }
-            $rows[] = $row;
-        }
-        fclose($fh);
-    }
-
-    if (!$changed) {
-        echo json_encode(['error' => 'Exercise not found']);
-        return;
-    }
-
-    $fh = fopen($logCsv, 'w');
-    if (!$fh) {
-        http_response_code(500);
-        echo json_encode(['error' => 'Cannot write log CSV']);
-        return;
-    }
-    // header coerente con il resto del progetto
-    fputcsv($fh, ['id','date','origin_date','activity','pairs','prev_pairs'], ';');
-    foreach ($rows as $row) {
-        fputcsv($fh, $row, ';');
-    }
-    fclose($fh);
-
-    echo json_encode(['success' => true]);
-}
-
