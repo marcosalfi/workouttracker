@@ -93,9 +93,13 @@ switch ($action) {
         handleRenameExercise($db);
         break;        
 
-    case 'getExercise':
-        handleGetExercise($db);
-        break;        
+    case 'getExerciseById':
+        handleGetExerciseById($db);
+        break;
+
+    //case 'getExercise':
+    //    handleGetExercise($db);
+    //    break;        
 
     case 'saveExercisePairs':
         handleSaveExercisePairs($db);
@@ -187,6 +191,34 @@ function handleGetExercise(SqliteDb $db)
     ], JSON_UNESCAPED_UNICODE);
 }
 
+function handleGetExerciseById(SqliteDb $db)
+{
+    $id = trim($_GET['id'] ?? '');
+    if ($id === '') jsonError('Missing id');
+
+    $rows = $db->queryDt(
+        "SELECT id, activity, pairs, prev_pairs
+         FROM workout_log
+         WHERE id = :id
+         LIMIT 1",
+        [ ':id' => $id ]
+    );
+
+    $row = (is_array($rows) && count($rows) > 0) ? $rows[0] : null;
+    if (!$row) {
+        echo json_encode(['success'=>true,'id'=>null,'activity'=>null,'pairs'=>[],'prev_pairs'=>[]], JSON_UNESCAPED_UNICODE);
+        return;
+    }
+
+    echo json_encode([
+        'success' => true,
+        'id' => $row['id'],
+        'activity' => $row['activity'],
+        'pairs' => parsePairs($row['pairs']),
+        'prev_pairs' => parsePairs($row['prev_pairs'])
+    ], JSON_UNESCAPED_UNICODE);
+}
+
 
 
 function handleRenameExercise(SqliteDb $db)
@@ -208,19 +240,19 @@ function handleRenameExercise(SqliteDb $db)
 
 function handleSaveExercisePairs(SqliteDb $db)
 {
-    $id    = $_POST['id'] ?? null;
+    $id    = $_POST['id'] ?? '';
     $pairs = $_POST['pairs'] ?? null;
 
-    if (!$id || $pairs === null) {
-        jsonError('Missing id/pairs');
-    }
+    if ($id === '' || $pairs === null) jsonError('Missing id/pairs');
+
+    $pairsStr = pairsToString($pairs);
 
     $n = $db->query(
         "UPDATE workout_log SET pairs = :p WHERE id = :id",
-        [ ':p' => $pairs, ':id' => $id ]
+        [ ':p' => $pairsStr, ':id' => $id ]
     );
 
-    jsonOk(['updated' => $n]);
+    echo json_encode(['success'=>true,'updated'=>$n], JSON_UNESCAPED_UNICODE);
 }
 
 
@@ -391,12 +423,16 @@ function parsePairs($s)
     return $out;
 }
 
-function pairsToString(array $pairs)
-{
+function pairsToString($pairsJsonOrArray) {
+    // accetta sia array PHP che JSON string
+    $arr = is_string($pairsJsonOrArray) ? json_decode($pairsJsonOrArray, true) : $pairsJsonOrArray;
+    if (!is_array($arr) || !count($arr)) return '';
+
     $out = [];
-    foreach ($pairs as $p) {
-        if (!isset($p['reps'],$p['weight'])) continue;
-        $out[] = (int)$p['reps'].'@'.(float)$p['weight'];
+    foreach ($arr as $p) {
+        $reps = isset($p['reps']) ? (int)$p['reps'] : 0;
+        $w    = isset($p['weight']) ? (float)$p['weight'] : 0;
+        if ($reps > 0) $out[] = $reps . '@' . $w;
     }
     return implode('|', $out);
 }
