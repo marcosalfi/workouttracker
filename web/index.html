@@ -56,6 +56,7 @@ $(function() {
   });
 
   $('#login-form').on('submit', function(e) {
+    const v  = Date.now(); // timestamp Unix (ms)
     e.preventDefault();
     var data = {
       username: $(this).find('input[name="username"]').val(),
@@ -64,7 +65,7 @@ $(function() {
     $.post('auth.php?action=login', data)
       .done(function(res) {
         if (res.success) {
-          window.location = 'workoutList.html';
+          window.location = 'workoutList.html?v=' + v;
         } else {
           showLoginMessage(res.error || 'Errore login', true);
         }

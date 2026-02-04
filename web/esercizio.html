@@ -188,7 +188,7 @@ function todayYMD() {
  */
 function ensureLogin(cb) {
   $.getJSON('auth.php?action=me').done(function(res) {
-    if (!res.logged) window.location = 'login.html';
+    if (!res.logged) window.location = 'index.html';
     else cb(res);
   });
 }
@@ -374,23 +374,24 @@ $(function() {
     $('#subtitle-date').text(''); // richiesto: niente info
 
     // Carico i set correnti + set storici (prev_pairs)
-    $.getJSON(
-      'api.php?action=getExercise&date=' + encodeURIComponent(viewDate) +
-      '&activity=' + encodeURIComponent(activityName)
-    ).done(function(res) {
-      pairs     = res.pairs || [];
-      prevPairs = res.prev_pairs || [];
-      renderPairs();
-      renderPrevPairs();
+    $.getJSON('api.php?action=getExercise&date='+encodeURIComponent(viewDate)+'&activity='+encodeURIComponent(activityName))
+    .done(res => {
+        exerciseId = res.id;
+        pairs = res.pairs || [];
+        prevPairs = res.prev_pairs || [];
+        renderPairs();
+        renderPrevPairs();
     });
 
     // Torna a currentworkout (come prima)
     $('#btn-back').on('click', function() {
-      window.location = 'currentworkout.html';
+      const v  = Date.now(); // timestamp Unix (ms)
+      window.location = 'currentworkout.html?v=' + v;
     });
 
     // Timer: passa reps/weight correnti in query string
     $('#btn-timer').on('click', function() {
+      const v  = Date.now(); 
       const params = new URLSearchParams(window.location.search);
       params.set('reps', $('#txt-reps').val() || '');
       params.set('weight', $('#txt-weight').val() || '');
@@ -407,37 +408,15 @@ $(function() {
     // Conferma rinomina
     $('#btn-rename-confirm').on('click', function() {
       const newName = $('#txt-rename').val().trim();
-      if (!newName) {
-        showMsg('Inserisci un nuovo nome per l\'esercizio.', true);
-        return;
-      }
-      if (newName === activityName) {
-        showMsg('Il nome è uguale a quello attuale.', true);
-        return;
-      }
-
       $.post('api.php?action=renameExercise', {
-        date: saveDate,
-        old_name: activityName,
+        id: exerciseId,
         new_name: newName
       }).done(function(res) {
-        if (!res.success) {
-          showMsg(res.error || 'Errore rinomina esercizio', true);
-          return;
-        }
-
-        activityName = newName;
-        $('#title-ex').text(activityName);
-
-        const params = new URLSearchParams(window.location.search);
-        params.set('ex', newName.replace(/ /g, '_'));
-        const qs = params.toString();
-        window.location = 'esercizio.html' + (qs ? '?' + qs : '');
-      }).fail(function(xhr) {
-        showMsg(xhr.responseText || 'Errore HTTP nella rinomina', true);
+        if (!res.success) alert(res.error || 'Errore');
+        else location.reload();
       });
-
     });
+
   });
 
   /**
@@ -525,19 +504,14 @@ $(function() {
       pairs[editIndex] = newSet;
     }
 
-    savePairsToServer(function(ok, err) {
-      if (!ok) {
-        showMsg(err || 'Errore salvataggio', true);
-        return;
-      }
+    function savePairsToServer(cb) {
+      $.post('api.php?action=saveExercisePairs', {
+        id: exerciseId,
+        pairs: JSON.stringify(pairs)
+      }).done(res => cb(res.success));
+    }
 
-      // Esci dalla modalità edit: renderPairs rimetterà il verde dove serve
-      editIndex = null;
-      renderPairs();
 
-      // Richiesto: toast breve invece di scrivere "salvato" nella pagina
-      showSavedToast();
-    });
   });
 });
 </script>

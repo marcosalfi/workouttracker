@@ -62,7 +62,7 @@ function getQuery(name) {
 
 function ensureLogin(cb) {
   $.getJSON('auth.php?action=me').done(function(res) {
-    if (!res.logged) window.location = 'login.html';
+    if (!res.logged) window.location = 'index.html';
     else cb(res);
   });
 }
@@ -79,6 +79,7 @@ function loadActivitiesSelect() {
 function loadTodayWorkout() {
   $('#tbl-ex tbody').empty();
   $('#msg-ex').addClass('d-none');
+  const v  = Date.now(); // timestamp Unix (ms)
   $.getJSON('api.php?action=getWorkout&date=' + encodeURIComponent(todayStr))
     .done(function(res) {
       const items = res.items || [];
@@ -93,7 +94,7 @@ function loadTodayWorkout() {
           e.preventDefault();
           const ex = it.activity.replace(/ /g, '_');
           window.location = 'esercizio.html?ex='
-            + encodeURIComponent(ex) + '&date=' + encodeURIComponent(todayStr);
+            + encodeURIComponent(ex) + '&date=' + encodeURIComponent(todayStr) + '&v=' + v;;
         });
         tr.append($('<td>').append(link));
 
@@ -144,7 +145,8 @@ $(function() {
   });
 
   $('#btn-back').on('click', function() {
-    window.location = 'workoutList.html';
+    const v  = Date.now(); // timestamp Unix (ms)
+    window.location = 'workoutList.html?v=' + v;
   });
 
   $('#sel-activity').on('change', function() {

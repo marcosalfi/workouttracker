@@ -1,6 +1,7 @@
 <?php
-// api.php
 /*
+api.php
+
 php 7.x
 
 Compatibilità: se il CSV è nel vecchio formato (senza title), l'API lo “upgrada” in memoria
@@ -11,76 +12,6 @@ header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/sqlite_helper.php';
 $BASE_DIR = __DIR__;
 
-/* ===================== LOG ===================== */
-function apiLog($msg, $level = 'INFO')
-{
-    $line = sprintf("[%s][%s] %s\n", date('Y-m-d H:i:s'), $level, $msg);
-    @file_put_contents(__DIR__ . '/apilog.txt', $line, FILE_APPEND | LOCK_EX);
-}
-
-
-function isAbsolutePath($path)
-{
-    $path = (string)$path;
-    if ($path === '') return false;
-
-    // Linux/Unix
-    if ($path[0] === '/') return true;
-
-    // Windows (C:\...)
-    if (preg_match('/^[A-Za-z]:[\\\\\\/]/', $path)) return true;
-
-    // UNC path (\\server\share)
-    if (substr($path, 0, 2) === '\\\\') return true;
-
-    return false;
-}
-
-function resolvePath($path, $baseDir)
-{
-    $path = trim((string)$path);
-    if ($path === '') return rtrim($baseDir, '/\\') . '/';
-
-    if (isAbsolutePath($path)) return $path;
-
-    return rtrim($baseDir, '/\\') . '/' . ltrim($path, '/\\');
-}
-
-/* ===================== HELPERS ===================== */
-function normalizeDate($s)
-{
-    $s = trim((string)$s);
-    if ($s === '') return '';
-    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $s)) return $s;
-    $t = strtotime($s);
-    return $t ? date('Y-m-d', $t) : '';
-}
-
-function parsePairs($s)
-{
-    $out = [];
-    foreach (explode('|', trim((string)$s)) as $p) {
-        if (strpos($p, '@') === false) continue;
-        [$r,$w] = explode('@', $p, 2);
-        $out[] = ['reps'=>(int)$r, 'weight'=>(float)$w];
-    }
-    return $out;
-}
-
-function pairsToString(array $pairs)
-{
-    $out = [];
-    foreach ($pairs as $p) {
-        if (!isset($p['reps'],$p['weight'])) continue;
-        $out[] = (int)$p['reps'].'@'.(float)$p['weight'];
-    }
-    return implode('|', $out);
-}
-
-function newId()
-{
-    return time().'_'.mt_rand(1000,9999);
-}
 
 /* ===================== CONFIG ===================== */
 $configPath = $BASE_DIR .'/config.json';
@@ -144,29 +75,65 @@ if (!$action) {
 switch ($action) {
 
     case 'listActivities':
-        echo json_encode([
-            'items'=>$db->queryDt(
-                "SELECT id, activity, activity_type FROM workout_activies ORDER BY activity"
-            )
-        ], JSON_UNESCAPED_UNICODE);
+        handleListActivities($db);
         break;
 
     case 'listWorkoutDates':
-        echo json_encode([
-            'items'=>$db->queryDt(
-                "SELECT wo_date AS date, MIN(title) AS title, COUNT(*) AS count
-                 FROM workout_log
-                 GROUP BY wo_date
-                 ORDER BY wo_date DESC
-                 LIMIT 20"
-            )
-        ], JSON_UNESCAPED_UNICODE);
+        handleListWorkoutDates($db); 
         break;
     case 'cloneWorkout':
         handleCloneWorkout($db); 
         break;
     
     case 'getWorkout':
+        handleWorkout($db);
+        break;
+
+    case 'renameExercise':
+        handleRenameExercise($db);
+        break;        
+
+    case 'getExercise':
+        handleGetExercise($db);
+        break;        
+
+    case 'saveExercisePairs':
+        handleSaveExercisePairs($db);
+        break;
+
+    default:
+        echo json_encode(['error'=>'Unknown action']);
+}
+
+function normalizeActivityName($s)
+{
+    $s = str_replace('_', ' ', (string)$s);
+    $s = trim($s);
+    $s = preg_replace('/\s+/', ' ', $s);
+    return $s;
+}
+
+function handleListActivities($db){
+    echo json_encode([
+        'items'=>$db->queryDt(
+            "SELECT id, activity, activity_type FROM workout_activies ORDER BY activity"
+        )
+    ], JSON_UNESCAPED_UNICODE);
+}
+
+function handleListWorkoutDates($db){
+    echo json_encode([
+        'items'=>$db->queryDt(
+            "SELECT wo_date AS date, MIN(title) AS title, COUNT(*) AS count
+                FROM workout_log
+                GROUP BY wo_date
+                ORDER BY wo_date DESC
+                LIMIT 20"
+        )
+    ], JSON_UNESCAPED_UNICODE);
+}
+
+function handleWorkout($db){
         $date = normalizeDate($_GET['date'] ?? '');
         $rows = $db->queryDt(
             "SELECT id, title, activity, pairs, prev_pairs, origin_date, activity_order
@@ -186,104 +153,75 @@ switch ($action) {
             'title'=>$rows[0]['title'] ?? '',
             'items'=>$rows
         ], JSON_UNESCAPED_UNICODE);
-        break;
-
-    case 'renameExercise':
-        handleRenameExercise($db);
-        break;        
-
-    case 'getExercise':
-        $date = normalizeDate($_GET['date'] ?? '');
-        $activity = trim($_GET['activity'] ?? '');
-
-        if ($date === '' || $activity === '') {
-            echo json_encode(['error' => 'Missing date or activity']);
-            break;
-        }
-
-        $rows = $db->queryDt(
-            "SELECT pairs, prev_pairs
-            FROM workout_log
-            WHERE wo_date = :d AND activity = :a
-            ORDER BY activity_order, id
-            LIMIT 1",
-            [':d' => $date, ':a' => $activity]
-        );
-
-        $pairs = [];
-        $prevPairs = [];
-        if (count($rows) > 0) {
-            $pairs = parsePairs($rows[0]['pairs'] ?? '');
-            $prevPairs = parsePairs($rows[0]['prev_pairs'] ?? '');
-        }
-
-        echo json_encode([
-            'date' => $date,
-            'activity' => $activity,
-            'pairs' => $pairs,
-            'prev_pairs' => $prevPairs
-        ], JSON_UNESCAPED_UNICODE);
-        break;        
-
-    case 'saveExercisePairs':
-        $date = normalizeDate($_POST['date'] ?? '');
-        $activity = trim($_POST['activity'] ?? '');
-        $pairs = json_decode($_POST['pairs'] ?? '[]', true);
-
-        $db->query(
-            "INSERT OR REPLACE INTO workout_log
-             (id,wo_date,origin_date,title,activity,pairs,prev_pairs,activity_order)
-             VALUES
-             (:id,:d,:o,:t,:a,:p,:pp,:ord)",
-            [
-                ':id'=>newId(),
-                ':d'=>$date,
-                ':o'=>$date,
-                ':t'=>$_POST['title'] ?? '',
-                ':a'=>$activity,
-                ':p'=>pairsToString($pairs),
-                ':pp'=>'',
-                ':ord'=>$_POST['activity_order'] ?? null
-            ]
-        );
-
-        echo json_encode(['success'=>true]);
-        break;
-
-    default:
-        echo json_encode(['error'=>'Unknown action']);
 }
 
-function handleRenameExercise(SqliteDb $db)
+function handleGetExercise(SqliteDb $db)
 {
-    $date = normalizeDate($_POST['date'] ?? ($_GET['date'] ?? ''));
-    $oldName = trim($_POST['old_name'] ?? ($_POST['activity'] ?? ($_GET['activity'] ?? '')));
-    $newName = trim($_POST['new_name'] ?? ($_GET['new_name'] ?? ''));
+    $date     = $_GET['date'] ?? '';
+    $activity = trim($_GET['activity'] ?? '');
 
-    if ($date === '' || $oldName === '' || $newName === '') {
-        http_response_code(400);
-        echo json_encode(['error' => 'Missing date/old_name/new_name']);
+    if ($date === '' || $activity === '') {
+        jsonError('Missing date/activity');
+    }
+
+    $rows = $db->queryDt(
+        "SELECT id, pairs, prev_pairs
+         FROM workout_log
+         WHERE wo_date = :d AND activity = :a
+         ORDER BY rowid DESC
+         LIMIT 1",
+        [ ':d' => $date, ':a' => $activity ]
+    );
+
+    $row = (is_array($rows) && count($rows) > 0) ? $rows[0] : null;
+
+    if (!$row) {
+        echo json_encode(['id'=>null,'pairs'=>[],'prev_pairs'=>[]], JSON_UNESCAPED_UNICODE);
         return;
     }
 
-    // rinomina SOLO per quel giorno
-    $n = $db->query(
-        "UPDATE workout_log
-         SET activity = :new
-         WHERE wo_date = :d AND activity = :old;",
-        [
-            ':new' => $newName,
-            ':d'   => $date,
-            ':old' => $oldName
-        ]
-    );
-
     echo json_encode([
-        'success' => true,
-        'updated' => $n
+        'id' => $row['id'],
+        'pairs' => parsePairs($row['pairs']),
+        'prev_pairs' => parsePairs($row['prev_pairs'])
     ], JSON_UNESCAPED_UNICODE);
 }
 
+
+
+function handleRenameExercise(SqliteDb $db)
+{
+    $id      = $_POST['id'] ?? $_GET['id'] ?? null;
+    $newName = trim($_POST['new_name'] ?? $_GET['new_name'] ?? '');
+
+    if (!$id || $newName === '') {
+        jsonError('Missing id/new_name');
+    }
+
+    $n = $db->query(
+        "UPDATE workout_log SET activity = :a WHERE id = :id",
+        [ ':a' => $newName, ':id' => $id ]
+    );
+
+    jsonOk(['updated' => $n]);
+}
+
+function handleSaveExercisePairs(SqliteDb $db)
+{
+    $id    = $_POST['id'] ?? null;
+    $pairs = $_POST['pairs'] ?? null;
+
+    if (!$id || $pairs === null) {
+        jsonError('Missing id/pairs');
+    }
+
+    $n = $db->query(
+        "UPDATE workout_log SET pairs = :p WHERE id = :id",
+        [ ':p' => $pairs, ':id' => $id ]
+    );
+
+    jsonOk(['updated' => $n]);
+}
 
 
 function handleCloneWorkout(SqliteDb $db)
@@ -394,4 +332,87 @@ function ensureSchema(SqliteDb $db)
             activity_type TEXT NOT NULL
         )"
     );
+}
+
+
+/* ===================== LOG ===================== */
+function apiLog($msg, $level = 'INFO')
+{
+    $line = sprintf("[%s][%s] %s\n", date('Y-m-d H:i:s'), $level, $msg);
+    @file_put_contents(__DIR__ . '/apilog.txt', $line, FILE_APPEND | LOCK_EX);
+}
+
+/* ===================== HELPERS ===================== */
+function isAbsolutePath($path)
+{
+    $path = (string)$path;
+    if ($path === '') return false;
+
+    // Linux/Unix
+    if ($path[0] === '/') return true;
+
+    // Windows (C:\...)
+    if (preg_match('/^[A-Za-z]:[\\\\\\/]/', $path)) return true;
+
+    // UNC path (\\server\share)
+    if (substr($path, 0, 2) === '\\\\') return true;
+
+    return false;
+}
+
+function resolvePath($path, $baseDir)
+{
+    $path = trim((string)$path);
+    if ($path === '') return rtrim($baseDir, '/\\') . '/';
+
+    if (isAbsolutePath($path)) return $path;
+
+    return rtrim($baseDir, '/\\') . '/' . ltrim($path, '/\\');
+}
+
+
+function normalizeDate($s)
+{
+    $s = trim((string)$s);
+    if ($s === '') return '';
+    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $s)) return $s;
+    $t = strtotime($s);
+    return $t ? date('Y-m-d', $t) : '';
+}
+
+function parsePairs($s)
+{
+    $out = [];
+    foreach (explode('|', trim((string)$s)) as $p) {
+        if (strpos($p, '@') === false) continue;
+        [$r,$w] = explode('@', $p, 2);
+        $out[] = ['reps'=>(int)$r, 'weight'=>(float)$w];
+    }
+    return $out;
+}
+
+function pairsToString(array $pairs)
+{
+    $out = [];
+    foreach ($pairs as $p) {
+        if (!isset($p['reps'],$p['weight'])) continue;
+        $out[] = (int)$p['reps'].'@'.(float)$p['weight'];
+    }
+    return implode('|', $out);
+}
+
+function jsonOk($extra = []) {
+    echo json_encode(array_merge(['success' => true], $extra), JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+function jsonError($msg, $code = 400) {
+    http_response_code($code);
+    echo json_encode(['success' => false, 'error' => $msg], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+function newId()
+{
+    return time().'_'.mt_rand(1000,9999);
 }

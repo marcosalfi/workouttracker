@@ -60,7 +60,8 @@ function todayYMD() {
 function ensureLogin(cb) {
   $.getJSON('auth.php?action=me').done(function(res) {
     if (!res.logged) {
-      window.location = 'login.html';
+      const v  = Date.now(); // timestamp Unix (ms)
+      window.location = 'index.html'; 
     } else {
       cb(res);
     }
@@ -188,11 +189,12 @@ function loadDates() {
           .addClass('btn btn-sm btn-primary')
           .text('Apri')
           .on('click', function() {
+            const v  = Date.now(); // timestamp Unix (ms)
             if (d === today) {
               const ref = d.replace(/-/g, '');
-              window.location = 'currentworkout.html?workoutRef=' + encodeURIComponent(ref);
+              window.location = 'currentworkout.html?workoutRef=' + encodeURIComponent(ref) + '&v=' + v;;
             } else {
-              window.location = 'workoutView.html?date=' + encodeURIComponent(d);
+              window.location = 'workoutView.html?date=' + encodeURIComponent(d) + '&v=' + v;
             }
           });
 
@@ -209,12 +211,14 @@ $(function() {
   });
 
   $('#btn-new-today').on('click', function() {
-    window.location = 'currentworkout.html';
+    const v  = Date.now();
+    window.location = 'currentworkout.html?v=' + v;
   });
   
 
   $('#btn-logout').on('click', function() {
     $.getJSON('auth.php?action=logout', function() {
+      const v  = Date.now();
       window.location = 'index.html';
     });
   });

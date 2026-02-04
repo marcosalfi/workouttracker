@@ -39,7 +39,7 @@ function todayYMD() {
 
 function ensureLogin(cb) {
   $.getJSON('auth.php?action=me').done(function(res) {
-    if (!res.logged) window.location = 'login.html';
+    if (!res.logged) window.location = 'index.html';
     else cb(res);
   });
 }
@@ -87,7 +87,8 @@ $(function() {
       });
 
     $('#btn-back').on('click', function() {
-      window.location = 'workoutList.html';
+      const v  = Date.now(); // timestamp Unix (ms)
+      window.location = 'workoutList.html?v=' + v;
     });
 
     $('#btn-start').on('click', function() {
@@ -100,7 +101,8 @@ $(function() {
         $.post('api.php?action=cloneWorkout', { source: source, target: target })
           .done(function(res) {
             // vai a modificare il workout di oggi
-            window.location = 'currentworkout.html';
+            const v  = Date.now(); // timestamp Unix (ms)
+            window.location = 'currentworkout.html?v=' + v;
           })
           .fail(function(xhr) {
             $('#btn-start').prop('disabled', false);

@@ -7,6 +7,14 @@ class SqliteDb
     private $dbPath = '';
     private $pdo = null;
 
+    // __construct(path opzionale): per compatibilità (new SqliteDb('path'))
+    public function __construct($path = '')
+    {
+        if ($path !== '' && $path !== null) {
+            $this->dbPath = (string)$path;
+        }
+    }
+
     // init(path): inizializza il path del database
     public function init($path)
     {
@@ -77,6 +85,15 @@ class SqliteDb
         $stmt->execute($params);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
+
+    // fetch: prima riga (o null) da una SELECT
+    public function fetch($sql, array $params = [])
+    {
+        $stmt = $this->openDb()->prepare($sql);
+        $stmt->execute($params);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $row ? $row : null;
+    }    
 
     // transazioni
     public function begin()
