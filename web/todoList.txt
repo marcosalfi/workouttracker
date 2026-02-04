@@ -8,9 +8,21 @@ x- python per copiare i dati da csv a sqllite
 x- qualche pagina punta ancora a login.html 
 x- esercizio.html non salva set 
 x- esercizio.html non modifica la label dopo il rename 
-api - sqllite - tabella con elenco degli esercizi 
+x- api - sqllite - tabella con elenco degli esercizi 
+api - sqllite - helper per backup database 
+api - sqllite - helper per creare nuovo database 
 currentworkout.html non salva esercizio 
+currentworkout.html non carica gli esercizi di workout_activies
 currentworkout.html il cancella esercizio di currentworkout.html non funziona 
 currentworkout.html deve chiamare esercizio per id 
 currentworkout.html possibilita' di spostare un esercizio piu' in alto nella lista del giorno 
-in tutte le pagine aggiungere parametro v= solo in caso di modalita debug (quando una pagina ha gia' v=) per velocizzare la pagina 
+in tutte le pagine ensureVParam che aggiungere parametro v= solo in caso di modalita debug (quando una pagina ha gia' v=) per velocizzare la pagina 
+
+
+function ensureVParam(url, id) {
+    const u = new URL(url, window.location.origin);
+    if (!u.searchParams.has('v')) {
+        u.searchParams.set('v', id);
+    }
+    return u.toString();
+}
