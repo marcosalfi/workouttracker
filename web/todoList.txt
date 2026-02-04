@@ -17,12 +17,3 @@ currentworkout.html il cancella esercizio di currentworkout.html non funziona
 currentworkout.html deve chiamare esercizio per id 
 currentworkout.html possibilita' di spostare un esercizio piu' in alto nella lista del giorno 
 in tutte le pagine ensureVParam che aggiungere parametro v= solo in caso di modalita debug (quando una pagina ha gia' v=) per velocizzare la pagina 
-
-
-function ensureVParam(url, id) {
-    const u = new URL(url, window.location.origin);
-    if (!u.searchParams.has('v')) {
-        u.searchParams.set('v', id);
-    }
-    return u.toString();
-}
