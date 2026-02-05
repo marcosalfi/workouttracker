@@ -108,6 +108,7 @@
               .addClass('alert alert-info').text('Nessun esercizio per oggi.');
             return;
           }
+          window.currentTitle = (res.title || '').trim();
           items.forEach(function (it) {
             const tr = $('<tr>');
             const link = $('<a href="#">').text(it.activity).on('click', function (e) {
@@ -128,9 +129,9 @@
               .text('Cancella')
               .on('click', function () {
                 if (!confirm('Cancellare tutto l\'esercizio "' + it.activity + '"?')) return;
+
                 $.post('api.php?action=deleteExercise', {
-                  date: todayStr,
-                  activity: it.activity
+                  id: it.id          // <-- FIX: delete per PK
                 }).done(function (r) {
                   if (r.success) loadTodayWorkout();
                   else alert(r.error || 'Errore cancellazione');
@@ -140,6 +141,7 @@
 
             $('#tbl-ex tbody').append(tr);
           });
+
         });
     }
 
@@ -181,19 +183,13 @@
           return;
         }
 
-        // se selezionato dalla combo, usa quell'id; altrimenti genera un id nuovo
-        const selId = $('#sel-activity').val();   // attenzione: deve essere l'id (non il nome)
-        const idToSave = selId ? selId : ('m_' + Date.now());
-
-        $.post('api.php?action=saveExercisePairs', {
-          id: idToSave,
+        $.post('api.php?action=addExercise', {
           date: todayStr,
-          activity: name,
-          pairs: JSON.stringify([])   // oppure [] se hai già pairs come stringa
+          title: window.currentTitle || '',
+          activity: name
         }).done(function (r) {
           if (r.success) {
             $('#txt-activity').val('');
-            $('#sel-activity').val('');
             loadTodayWorkout();
           } else {
             alert(r.error || 'Errore salvataggio esercizio');

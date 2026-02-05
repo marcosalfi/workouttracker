@@ -9,11 +9,12 @@ x- qualche pagina punta ancora a login.html
 x- esercizio.html non salva set 
 x- esercizio.html non modifica la label dopo il rename 
 x- api - sqllite - tabella con elenco degli esercizi 
+x- currentworkout.html non salva esercizio 
+x- currentworkout.html non carica gli esercizi di workout_activies
+x- currentworkout.html il cancella esercizio di currentworkout.html non funziona 
+x- currentworkout.html deve chiamare esercizio per id 
 api - sqllite - helper per backup database 
 api - sqllite - helper per creare nuovo database 
-currentworkout.html non salva esercizio 
-currentworkout.html non carica gli esercizi di workout_activies
-currentworkout.html il cancella esercizio di currentworkout.html non funziona 
-currentworkout.html deve chiamare esercizio per id 
 currentworkout.html possibilita' di spostare un esercizio piu' in alto nella lista del giorno 
 in tutte le pagine ensureVParam che aggiungere parametro v= solo in caso di modalita debug (quando una pagina ha gia' v=) per velocizzare la pagina 
+currentworkout - deve mostrare il titolo del workout (che contiene un elenco di esercizi) e permettere di cambiarlo 
