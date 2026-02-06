@@ -171,6 +171,14 @@
     let activityName = null;
     let exerciseId = null; // id dell'esercizio 
 
+    function ensureVParam(url, id) {
+      const u = new URL(url, window.location.origin);
+      if (!u.searchParams.has('v')) {
+        u.searchParams.set('v', id);
+      }
+      return u.toString();
+    }
+
     /**
      * Utility querystring
      */

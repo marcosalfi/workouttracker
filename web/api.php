@@ -14,14 +14,15 @@ $BASE_DIR = __DIR__;
 
 
 /* ===================== CONFIG ===================== */
-$configPath = $BASE_DIR .'/config.json';
+$configPath = $BASE_DIR . '/config.json';
 if (!file_exists($configPath)) {
     apiLog('config.json not found: ' . $configPath, 'ERROR');
-    echo json_encode(['error'=>'Missing config.json']);
+    echo json_encode(['error' => 'Missing config.json']);
     exit;
 }
 
 $configRaw = file_get_contents($configPath);
+// apiLog('configRaw: ' . $configRaw, 'DEBUG');
 $config = json_decode($configRaw, true);
 if (!is_array($config)) {
     apiLog('Invalid config.json in : ' . $configPath, 'ERROR');
@@ -68,7 +69,7 @@ ensureSchema($db);
 /* ===================== ACTION ===================== */
 $action = $_GET['action'] ?? $_POST['action'] ?? null;
 if (!$action) {
-    echo json_encode(['error'=>'No action']);
+    echo json_encode(['error' => 'No action']);
     exit;
 }
 
@@ -79,24 +80,31 @@ switch ($action) {
         break;
 
     case 'listWorkoutDates':
-        handleListWorkoutDates($db); 
+        handleListWorkoutDates($db);
         break;
     case 'cloneWorkout':
-        handleCloneWorkout($db); 
+        handleCloneWorkout($db);
         break;
-    
+
     case 'getWorkout':
         handleWorkout($db);
         break;
 
+    case 'deleteExercise':
+        handleDeleteExercise($db);
+        break;
+
     case 'renameExercise':
         handleRenameExercise($db);
-        break;        
+        break;
 
     case 'getExerciseById':
         handleGetExerciseById($db);
         break;
 
+    case 'addExercise':
+        handleAddExercise($db);
+        break;
     //case 'getExercise':
     //    handleGetExercise($db);
     //    break;        
@@ -106,7 +114,7 @@ switch ($action) {
         break;
 
     default:
-        echo json_encode(['error'=>'Unknown action']);
+        echo json_encode(['error' => 'Unknown action']);
 }
 
 function normalizeActivityName($s)
@@ -117,17 +125,88 @@ function normalizeActivityName($s)
     return $s;
 }
 
-function handleListActivities($db){
+function handleAddExercise(SqliteDb $db)
+{
+    $date     = normalizeDate($_POST['date'] ?? '');
+    $activity = trim($_POST['activity'] ?? '');
+    $title    = trim($_POST['title'] ?? '');
+
+    if ($date === '' || $activity === '') jsonError('Missing date/activity');
+    if ($title === '') $title = ''; // se vuoi obbligatorio, fai jsonError('Missing title');
+
+    $id = newId();
+
+    try {
+        // opzionale: activity_order in coda
+        $ordRow  = $db->queryDt(
+            "SELECT COALESCE(MAX(activity_order), 0) AS mx
+             FROM workout_log
+             WHERE wo_date = :d",
+            [':d' => $date]
+        );
+        $nextOrd = (int)($ordRow[0]['mx'] ?? 0) + 1;
+
+        // FIX: origin_date NON può essere NULL
+        $db->query("
+            INSERT INTO workout_log
+            (id, wo_date, origin_date, title, activity, pairs, prev_pairs, activity_order)
+            VALUES
+            (:id, :d, :o, :t, :a, :pairs, :prev, :ord)
+        ", [
+            ':id'    => $id,
+            ':d'     => $date,
+            ':o'     => $date,
+            ':t'     => $title,
+            ':a'     => $activity,
+            ':pairs' => '',
+            ':prev'  => '',
+            ':ord'   => $nextOrd
+        ]);
+
+        echo json_encode(['success' => true, 'id' => $id], JSON_UNESCAPED_UNICODE);
+    } catch (Throwable $ex) {
+        // log dettagliato server-side
+        apiLog('handleAddExercise ERROR: ' . $ex->getMessage(), 'ERROR');
+        apiLog('payload date=' . $date . ' title=' . $title . ' activity=' . $activity . ' id=' . $id, 'ERROR');
+
+        // risposta JSON pulita lato client
+        http_response_code(500);
+        echo json_encode([
+            'success' => false,
+            'error'   => 'DB error: ' . $ex->getMessage()
+        ], JSON_UNESCAPED_UNICODE);
+    }
+}
+
+function handleDeleteExercise(SqliteDb $db)
+{
+    $id = trim($_POST['id'] ?? ($_GET['id'] ?? ''));
+    if ($id === '') jsonError('Missing id');
+
+    try {
+        $n = $db->query("DELETE FROM workout_log WHERE id = :id", [':id' => $id]);
+        echo json_encode(['success' => true, 'deleted' => (int)$n], JSON_UNESCAPED_UNICODE);
+    } catch (Throwable $ex) {
+        apiLog('handleDeleteExercise ERROR: ' . $ex->getMessage() . ' id=' . $id, 'ERROR');
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'DB error: ' . $ex->getMessage()], JSON_UNESCAPED_UNICODE);
+    }
+}
+
+
+function handleListActivities($db)
+{
     echo json_encode([
-        'items'=>$db->queryDt(
+        'items' => $db->queryDt(
             "SELECT id, activity, activity_type FROM workout_activies ORDER BY activity"
         )
     ], JSON_UNESCAPED_UNICODE);
 }
 
-function handleListWorkoutDates($db){
+function handleListWorkoutDates($db)
+{
     echo json_encode([
-        'items'=>$db->queryDt(
+        'items' => $db->queryDt(
             "SELECT wo_date AS date, MIN(title) AS title, COUNT(*) AS count
                 FROM workout_log
                 GROUP BY wo_date
@@ -137,26 +216,27 @@ function handleListWorkoutDates($db){
     ], JSON_UNESCAPED_UNICODE);
 }
 
-function handleWorkout($db){
-        $date = normalizeDate($_GET['date'] ?? '');
-        $rows = $db->queryDt(
-            "SELECT id, title, activity, pairs, prev_pairs, origin_date, activity_order
+function handleWorkout($db)
+{
+    $date = normalizeDate($_GET['date'] ?? '');
+    $rows = $db->queryDt(
+        "SELECT id, title, activity, pairs, prev_pairs, origin_date, activity_order
              FROM workout_log
              WHERE wo_date = :d
              ORDER BY activity_order, activity",
-            [':d'=>$date]
-        );
+        [':d' => $date]
+    );
 
-        foreach ($rows as &$r) {
-            $r['pairs'] = parsePairs($r['pairs']);
-            $r['prev_pairs'] = parsePairs($r['prev_pairs']);
-        }
+    foreach ($rows as &$r) {
+        $r['pairs'] = parsePairs($r['pairs']);
+        $r['prev_pairs'] = parsePairs($r['prev_pairs']);
+    }
 
-        echo json_encode([
-            'date'=>$date,
-            'title'=>$rows[0]['title'] ?? '',
-            'items'=>$rows
-        ], JSON_UNESCAPED_UNICODE);
+    echo json_encode([
+        'date' => $date,
+        'title' => $rows[0]['title'] ?? '',
+        'items' => $rows
+    ], JSON_UNESCAPED_UNICODE);
 }
 
 function handleGetExercise(SqliteDb $db)
@@ -174,13 +254,13 @@ function handleGetExercise(SqliteDb $db)
          WHERE wo_date = :d AND activity = :a
          ORDER BY rowid DESC
          LIMIT 1",
-        [ ':d' => $date, ':a' => $activity ]
+        [':d' => $date, ':a' => $activity]
     );
 
     $row = (is_array($rows) && count($rows) > 0) ? $rows[0] : null;
 
     if (!$row) {
-        echo json_encode(['id'=>null,'pairs'=>[],'prev_pairs'=>[]], JSON_UNESCAPED_UNICODE);
+        echo json_encode(['id' => null, 'pairs' => [], 'prev_pairs' => []], JSON_UNESCAPED_UNICODE);
         return;
     }
 
@@ -201,12 +281,12 @@ function handleGetExerciseById(SqliteDb $db)
          FROM workout_log
          WHERE id = :id
          LIMIT 1",
-        [ ':id' => $id ]
+        [':id' => $id]
     );
 
     $row = (is_array($rows) && count($rows) > 0) ? $rows[0] : null;
     if (!$row) {
-        echo json_encode(['success'=>true,'id'=>null,'activity'=>null,'pairs'=>[],'prev_pairs'=>[]], JSON_UNESCAPED_UNICODE);
+        echo json_encode(['success' => true, 'id' => null, 'activity' => null, 'pairs' => [], 'prev_pairs' => []], JSON_UNESCAPED_UNICODE);
         return;
     }
 
@@ -220,7 +300,6 @@ function handleGetExerciseById(SqliteDb $db)
 }
 
 
-
 function handleRenameExercise(SqliteDb $db)
 {
     $id      = $_POST['id'] ?? $_GET['id'] ?? null;
@@ -232,7 +311,7 @@ function handleRenameExercise(SqliteDb $db)
 
     $n = $db->query(
         "UPDATE workout_log SET activity = :a WHERE id = :id",
-        [ ':a' => $newName, ':id' => $id ]
+        [':a' => $newName, ':id' => $id]
     );
 
     jsonOk(['updated' => $n]);
@@ -249,10 +328,10 @@ function handleSaveExercisePairs(SqliteDb $db)
 
     $n = $db->query(
         "UPDATE workout_log SET pairs = :p WHERE id = :id",
-        [ ':p' => $pairsStr, ':id' => $id ]
+        [':p' => $pairsStr, ':id' => $id]
     );
 
-    echo json_encode(['success'=>true,'updated'=>$n], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['success' => true, 'updated' => $n], JSON_UNESCAPED_UNICODE);
 }
 
 
@@ -286,7 +365,10 @@ function handleCloneWorkout(SqliteDb $db)
     // titolo del workout sorgente (primo non vuoto)
     $sourceTitle = '';
     foreach ($srcRows as $r) {
-        if (trim((string)$r['title']) !== '') { $sourceTitle = (string)$r['title']; break; }
+        if (trim((string)$r['title']) !== '') {
+            $sourceTitle = (string)$r['title'];
+            break;
+        }
     }
 
     $db->begin();
@@ -333,7 +415,6 @@ function handleCloneWorkout(SqliteDb $db)
             'source'  => $source,
             'target'  => $target
         ], JSON_UNESCAPED_UNICODE);
-
     } catch (Throwable $e) {
         $db->rollback();
         throw $e;
@@ -417,13 +498,14 @@ function parsePairs($s)
     $out = [];
     foreach (explode('|', trim((string)$s)) as $p) {
         if (strpos($p, '@') === false) continue;
-        [$r,$w] = explode('@', $p, 2);
-        $out[] = ['reps'=>(int)$r, 'weight'=>(float)$w];
+        [$r, $w] = explode('@', $p, 2);
+        $out[] = ['reps' => (int)$r, 'weight' => (float)$w];
     }
     return $out;
 }
 
-function pairsToString($pairsJsonOrArray) {
+function pairsToString($pairsJsonOrArray)
+{
     // accetta sia array PHP che JSON string
     $arr = is_string($pairsJsonOrArray) ? json_decode($pairsJsonOrArray, true) : $pairsJsonOrArray;
     if (!is_array($arr) || !count($arr)) return '';
@@ -437,12 +519,14 @@ function pairsToString($pairsJsonOrArray) {
     return implode('|', $out);
 }
 
-function jsonOk($extra = []) {
+function jsonOk($extra = [])
+{
     echo json_encode(array_merge(['success' => true], $extra), JSON_UNESCAPED_UNICODE);
     exit;
 }
 
-function jsonError($msg, $code = 400) {
+function jsonError($msg, $code = 400)
+{
     http_response_code($code);
     echo json_encode(['success' => false, 'error' => $msg], JSON_UNESCAPED_UNICODE);
     exit;
@@ -450,5 +534,5 @@ function jsonError($msg, $code = 400) {
 
 function newId()
 {
-    return time().'_'.mt_rand(1000,9999);
+    return time() . '_' . mt_rand(1000, 9999);
 }

@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="it">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -8,172 +9,196 @@
   <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </head>
+
 <body class="bg-light">
-<div class="container py-3">
-  <div class="d-flex justify-content-between align-items-center mb-3">
-    <h1 class="h5 mb-0">Workout di oggi <span id="lbl-date"></span></h1>
-    <button id="btn-back" class="btn btn-outline-secondary btn-sm">Workouts</button>
-  </div>
+  <div class="container py-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h1 class="h5 mb-0">Workout di oggi <span id="lbl-date"></span></h1>
+      <button id="btn-back" class="btn btn-outline-secondary btn-sm">Workouts</button>
+    </div>
 
-  <div class="card mb-3">
-    <div class="card-body">
-      <div class="mb-2">
-        <label class="form-label">Esercizio</label>
-        <select id="sel-activity" class="form-select mb-2">
-          <option value="">manuale</option>
-        </select>
-        <input type="text" id="txt-activity" class="form-control" placeholder="Nome esercizio">
+    <div class="card mb-3">
+      <div class="card-body">
+        <div class="mb-2">
+          <label class="form-label">Esercizio</label>
+          <select id="sel-activity" class="form-select mb-2">
+            <option value="">manuale</option>
+          </select>
+          <input type="text" id="txt-activity" class="form-control" placeholder="Nome esercizio">
+        </div>
+        <button id="btn-save-ex" class="btn btn-success btn-lg w-100">
+          Salva esercizio
+        </button>
       </div>
-      <button id="btn-save-ex" class="btn btn-success btn-lg w-100">
-        Salva esercizio
-      </button>
+    </div>
+
+    <div class="card">
+      <div class="card-body">
+        <h2 class="h6 mb-2">Esercizi di oggi</h2>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover" id="tbl-ex">
+            <thead>
+              <tr>
+                <th>Esercizio</th>
+                <th>Set</th>
+                <th class="text-end">Azioni</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div id="msg-ex" class="mt-2 d-none"></div>
+      </div>
     </div>
   </div>
 
-  <div class="card">
-    <div class="card-body">
-      <h2 class="h6 mb-2">Esercizi di oggi</h2>
-      <div class="table-responsive">
-        <table class="table table-sm table-hover" id="tbl-ex">
-          <thead>
-          <tr><th>Esercizio</th><th>Set</th><th class="text-end">Azioni</th></tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-      <div id="msg-ex" class="mt-2 d-none"></div>
-    </div>
-  </div>
-</div>
+  <script>
+    let todayStr;
 
-<script>
-let todayStr;
-
-function todayYMD() {
-  const d = new Date();
-  const m = String(d.getMonth()+1).padStart(2,'0');
-  const day = String(d.getDate()).padStart(2,'0');
-  return d.getFullYear() + '-' + m + '-' + day;
-}
-
-function getQuery(name) {
-  return new URLSearchParams(window.location.search).get(name);
-}
-
-function ensureLogin(cb) {
-  $.getJSON('auth.php?action=me').done(function(res) {
-    if (!res.logged) window.location = 'index.html';
-    else cb(res);
-  });
-}
-
-function loadActivitiesSelect() {
-  $('#sel-activity').empty().append('<option value="">manuale</option>');
-  $.getJSON('api.php?action=listActivities').done(function(res) {
-    (res.activities || []).forEach(function(a) {
-      $('#sel-activity').append($('<option>').val(a).text(a));
-    });
-  });
-}
-
-function loadTodayWorkout() {
-  $('#tbl-ex tbody').empty();
-  $('#msg-ex').addClass('d-none');
-  const v  = Date.now(); // timestamp Unix (ms)
-  $.getJSON('api.php?action=getWorkout&date=' + encodeURIComponent(todayStr))
-    .done(function(res) {
-      const items = res.items || [];
-      if (!items.length) {
-        $('#msg-ex').removeClass('d-none alert-danger')
-          .addClass('alert alert-info').text('Nessun esercizio per oggi.');
-        return;
+    function ensureVParam(url, id) {
+      const u = new URL(url, window.location.origin);
+      if (!u.searchParams.has('v')) {
+        u.searchParams.set('v', id);
       }
-      items.forEach(function(it) {
-        const tr = $('<tr>');
-        const link = $('<a href="#">').text(it.activity).on('click', function(e) {
-          e.preventDefault();
-          window.location = 'esercizio.html?id='
-            + encodeURIComponent(it.id) + '&date=' + encodeURIComponent(todayStr) + '&v=' + v;;
+      return u.toString();
+    }
+
+    function todayYMD() {
+      const d = new Date();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return d.getFullYear() + '-' + m + '-' + day;
+    }
+
+    function getQuery(name) {
+      return new URLSearchParams(window.location.search).get(name);
+    }
+
+    function ensureLogin(cb) {
+      $.getJSON('auth.php?action=me').done(function (res) {
+        if (!res.logged) window.location = 'index.html';
+        else cb(res);
+      });
+    }
+
+    function loadActivitiesSelect() {
+      $('#sel-activity').empty().append('<option value="">manuale</option>');
+
+      $.getJSON('api.php?action=listActivities').done(function (res) {
+        (res.items || []).forEach(function (row) {
+          // row = { id, activity, activity_type }
+          $('#sel-activity').append(
+            $('<option>')
+              .val(row.activity) // oppure row.id se vuoi salvare l'id
+              .text(row.activity)
+          );
         });
-        tr.append($('<td>').append(link));
+      });
+    }
 
-        let summary = '';
-        if (it.pairs && it.pairs.length) {
-          summary = it.pairs.map(p => p.reps + 'x' + p.weight).join(', ');
-        }
-        tr.append($('<td>').text(summary));
-
-        const btnDel = $('<button>')
-          .addClass('btn btn-sm btn-outline-danger')
-          .text('Cancella')
-          .on('click', function() {
-            if (!confirm('Cancellare tutto l\'esercizio "' + it.activity + '"?')) return;
-            $.post('api.php?action=deleteExercise', {
-              date: todayStr,
-              activity: it.activity
-            }).done(function(r) {
-              if (r.success) loadTodayWorkout();
-              else alert(r.error || 'Errore cancellazione');
+    function loadTodayWorkout() {
+      $('#tbl-ex tbody').empty();
+      $('#msg-ex').addClass('d-none');
+      const v = Date.now(); // timestamp Unix (ms)
+      $.getJSON('api.php?action=getWorkout&date=' + encodeURIComponent(todayStr))
+        .done(function (res) {
+          const items = res.items || [];
+          if (!items.length) {
+            $('#msg-ex').removeClass('d-none alert-danger')
+              .addClass('alert alert-info').text('Nessun esercizio per oggi.');
+            return;
+          }
+          window.currentTitle = (res.title || '').trim();
+          items.forEach(function (it) {
+            const tr = $('<tr>');
+            const link = $('<a href="#">').text(it.activity).on('click', function (e) {
+              e.preventDefault();
+              window.location = 'esercizio.html?id='
+                + encodeURIComponent(it.id) + '&date=' + encodeURIComponent(todayStr) + '&v=' + v;;
             });
+            tr.append($('<td>').append(link));
+
+            let summary = '';
+            if (it.pairs && it.pairs.length) {
+              summary = it.pairs.map(p => p.reps + 'x' + p.weight).join(', ');
+            }
+            tr.append($('<td>').text(summary));
+
+            const btnDel = $('<button>')
+              .addClass('btn btn-sm btn-outline-danger')
+              .text('Cancella')
+              .on('click', function () {
+                if (!confirm('Cancellare tutto l\'esercizio "' + it.activity + '"?')) return;
+
+                $.post('api.php?action=deleteExercise', {
+                  id: it.id          // <-- FIX: delete per PK
+                }).done(function (r) {
+                  if (r.success) loadTodayWorkout();
+                  else alert(r.error || 'Errore cancellazione');
+                });
+              });
+            tr.append($('<td class="text-end">').append(btnDel));
+
+            $('#tbl-ex tbody').append(tr);
           });
-        tr.append($('<td class="text-end">').append(btnDel));
 
-        $('#tbl-ex tbody').append(tr);
-      });
-    });
-}
-
-$(function() {
-  ensureLogin(function() {
-    todayStr = todayYMD();
-    $('#lbl-date').text(todayStr);
-
-    const ref = getQuery('workoutRef');
-    if (ref) {
-      $.post('api.php?action=cloneWorkout', {
-        source: ref,
-        target: todayStr
-      }).always(function() {
-        loadTodayWorkout();
-      });
-    } else {
-      loadTodayWorkout();
+        });
     }
 
-    loadActivitiesSelect();
-  });
+    $(function () {
+      ensureLogin(function () {
+        todayStr = todayYMD();
+        $('#lbl-date').text(todayStr);
 
-  $('#btn-back').on('click', function() {
-    const v  = Date.now(); // timestamp Unix (ms)
-    window.location = 'workoutList.html?v=' + v;
-  });
+        const ref = getQuery('workoutRef');
+        if (ref) {
+          $.post('api.php?action=cloneWorkout', {
+            source: ref,
+            target: todayStr
+          }).always(function () {
+            loadTodayWorkout();
+          });
+        } else {
+          loadTodayWorkout();
+        }
 
-  $('#sel-activity').on('change', function() {
-    const v = $(this).val();
-    $('#txt-activity').val(v);
-  });
+        loadActivitiesSelect();
+      });
 
-  $('#btn-save-ex').on('click', function() {
-    const name = $('#txt-activity').val().trim();
-    if (!name) {
-      $('#msg-ex').removeClass('d-none alert-success')
-        .addClass('alert alert-danger').text('Inserisci un nome esercizio.');
-      return;
-    }
-    $.post('api.php?action=saveExercisePairs', {
-      date: todayStr,
-      activity: name,
-      pairs: JSON.stringify([])
-    }).done(function(r) {
-      if (r.success) {
-        $('#txt-activity').val('');
-        loadTodayWorkout();
-      } else {
-        alert(r.error || 'Errore salvataggio esercizio');
-      }
+      $('#btn-back').on('click', function () {
+        const v = Date.now(); // timestamp Unix (ms)
+        window.location = 'workoutList.html?v=' + v;
+      });
+
+      $('#sel-activity').on('change', function () {
+        const v = $(this).val();
+        $('#txt-activity').val(v);
+      });
+
+      $('#btn-save-ex').on('click', function () {
+        const name = $('#txt-activity').val().trim();
+        if (!name) {
+          $('#msg-ex').removeClass('d-none alert-success')
+            .addClass('alert alert-danger').text('Inserisci un nome esercizio.');
+          return;
+        }
+
+        $.post('api.php?action=addExercise', {
+          date: todayStr,
+          title: window.currentTitle || '',
+          activity: name
+        }).done(function (r) {
+          if (r.success) {
+            $('#txt-activity').val('');
+            loadTodayWorkout();
+          } else {
+            alert(r.error || 'Errore salvataggio esercizio');
+          }
+        });
+      });
+
     });
-  });
-});
-</script>
+  </script>
 </body>
+
 </html>
