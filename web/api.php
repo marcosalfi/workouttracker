@@ -148,24 +148,6 @@ function handleAddExercise(SqliteDb $db)
     if ($date === '' || $activity === '') jsonError('Missing date/activity');
     if ($title === '') $title = ''; 
 
-        // crea il "workout day" se non esiste
-    ensureWorkoutDay($db, $date);
-
-    // se arriva un titolo e quello del day è vuoto, lo settiamo
-    if ($title !== '') {
-        $db->query("
-            UPDATE workout_days
-            SET title = :t
-            WHERE wo_date = :d AND (title IS NULL OR title = '')
-        ", [':t' => $title, ':d' => $date]);
-    }
-
-    // titolo effettivo da usare sull'esercizio
-    $dayTitleRow = $db->queryDt("SELECT title FROM workout_days WHERE wo_date = :d LIMIT 1", [':d' => $date]);
-    $dayTitle = (string)($dayTitleRow[0]['title'] ?? '');
-    if ($dayTitle === '' && $title !== '') $dayTitle = $title;
-
-
     $id = newId();
 
     try {
