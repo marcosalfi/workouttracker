@@ -17,6 +17,17 @@
       <button id="btn-back" class="btn btn-outline-secondary btn-sm">Workouts</button>
     </div>
 
+    <!-- Title box -->
+    <div class="card mb-3">
+      <div class="card-body">
+        <label class="form-label">Titolo workout</label>
+        <div class="input-group">
+          <input type="text" id="txt-title" class="form-control" placeholder="(senza titolo)">
+          <button id="btn-save-title" class="btn btn-primary">Salva titolo</button>
+        </div>
+      </div>
+    </div>
+
     <div class="card mb-3">
       <div class="card-body">
         <div class="mb-2">
@@ -52,6 +63,17 @@
     </div>
   </div>
 
+  <!-- Toast -->
+  <div class="toast-container position-fixed bottom-0 end-0 p-3">
+    <div id="app-toast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+      <div class="toast-header">
+        <strong class="me-auto">Workout</strong>
+        <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+      </div>
+      <div class="toast-body" id="toast-body">Salvato</div>
+    </div>
+  </div>
+
   <script>
     let todayStr;
 
@@ -70,6 +92,13 @@
       return d.getFullYear() + '-' + m + '-' + day;
     }
 
+    function showToast(msg) {
+      $('#toast-body').text(msg);
+      const el = document.getElementById('app-toast');
+      const t = bootstrap.Toast.getOrCreateInstance(el, { delay: 1500 });
+      t.show();
+    }
+
     function getQuery(name) {
       return new URLSearchParams(window.location.search).get(name);
     }
@@ -79,6 +108,10 @@
         if (!res.logged) window.location = 'index.html';
         else cb(res);
       });
+    }
+
+    function titleKey(dateStr) {
+      return 'wo_title_' + dateStr;
     }
 
     function loadActivitiesSelect() {
@@ -103,18 +136,27 @@
       $.getJSON('api.php?action=getWorkout&date=' + encodeURIComponent(todayStr))
         .done(function (res) {
           const items = res.items || [];
+          const apiTitle = (res.title || '').trim();
+
+          // se non ci sono record, il titolo "persistente" lo teniamo in localStorage
+          const savedTitle = (localStorage.getItem(titleKey(todayStr)) || '').trim();
+          const effectiveTitle = apiTitle || savedTitle;
+
+          $('#txt-title').val(effectiveTitle);
+          window.currentTitle = effectiveTitle;
           if (!items.length) {
             $('#msg-ex').removeClass('d-none alert-danger')
-              .addClass('alert alert-info').text('Nessun esercizio per oggi.');
+              .addClass('alert alert-info')
+              .text('Workout vuoto: aggiungi un esercizio.');
             return;
           }
-          window.currentTitle = (res.title || '').trim();
+
           items.forEach(function (it) {
             const tr = $('<tr>');
             const link = $('<a href="#">').text(it.activity).on('click', function (e) {
               e.preventDefault();
               window.location = 'esercizio.html?id='
-                + encodeURIComponent(it.id) + '&date=' + encodeURIComponent(todayStr) + '&v=' + v;;
+                + encodeURIComponent(it.id) + '&date=' + encodeURIComponent(todayStr) + '&v=' + v;
             });
             tr.append($('<td>').append(link));
 
@@ -130,9 +172,7 @@
               .on('click', function () {
                 if (!confirm('Cancellare tutto l\'esercizio "' + it.activity + '"?')) return;
 
-                $.post('api.php?action=deleteExercise', {
-                  id: it.id          // <-- FIX: delete per PK
-                }).done(function (r) {
+                $.post('api.php?action=deleteExercise', { id: it.id }).done(function (r) {
                   if (r.success) loadTodayWorkout();
                   else alert(r.error || 'Errore cancellazione');
                 });
@@ -149,20 +189,32 @@
       ensureLogin(function () {
         todayStr = todayYMD();
         $('#lbl-date').text(todayStr);
-
-        const ref = getQuery('workoutRef');
-        if (ref) {
-          $.post('api.php?action=cloneWorkout', {
-            source: ref,
-            target: todayStr
-          }).always(function () {
-            loadTodayWorkout();
-          });
-        } else {
-          loadTodayWorkout();
-        }
-
+        loadTodayWorkout();
         loadActivitiesSelect();
+      });
+
+
+      $('#btn-save-title').on('click', function () {
+        const t = ($('#txt-title').val() || '').trim();
+
+        $.post('api.php?action=updateWorkoutTitle', { date: todayStr, title: t })
+          .done(function (r) {
+            if (r.success) {
+              if ((r.updated | 0) > 0) {
+                // esiste il giorno (ha record): titolo scritto sul DB
+                localStorage.removeItem(titleKey(todayStr));
+                showToast('Titolo salvato');
+                loadTodayWorkout();
+              } else {
+                // giorno NON esiste (0 record): niente DB, memorizzo localmente
+                localStorage.setItem(titleKey(todayStr), t);
+                showToast('Titolo memorizzato (sarà applicato al primo esercizio)');
+              }
+            } else {
+              alert(r.error || 'Errore salvataggio titolo');
+            }
+          })
+          .fail(function () { alert('Errore salvataggio titolo'); });
       });
 
       $('#btn-back').on('click', function () {
@@ -177,6 +229,7 @@
 
       $('#btn-save-ex').on('click', function () {
         const name = $('#txt-activity').val().trim();
+        const t = ($('#txt-title').val() || '').trim();
         if (!name) {
           $('#msg-ex').removeClass('d-none alert-success')
             .addClass('alert alert-danger').text('Inserisci un nome esercizio.');
@@ -185,7 +238,7 @@
 
         $.post('api.php?action=addExercise', {
           date: todayStr,
-          title: window.currentTitle || '',
+          title: t,
           activity: name
         }).done(function (r) {
           if (r.success) {

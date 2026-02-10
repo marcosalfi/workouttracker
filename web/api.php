@@ -4,8 +4,6 @@ api.php
 
 php 7.x
 
-Compatibilità: se il CSV è nel vecchio formato (senza title), l'API lo “upgrada” in memoria
-e, quando riscrive, usa sempre l'header completo.
 */
 header('Content-Type: application/json; charset=utf-8');
 
@@ -90,6 +88,10 @@ switch ($action) {
         handleWorkout($db);
         break;
 
+    case 'updateWorkoutTitle':
+        handleUpdateWorkoutTitle($db);
+        break;        
+
     case 'deleteExercise':
         handleDeleteExercise($db);
         break;
@@ -104,10 +106,7 @@ switch ($action) {
 
     case 'addExercise':
         handleAddExercise($db);
-        break;
-    //case 'getExercise':
-    //    handleGetExercise($db);
-    //    break;        
+        break;   
 
     case 'saveExercisePairs':
         handleSaveExercisePairs($db);
@@ -117,12 +116,27 @@ switch ($action) {
         echo json_encode(['error' => 'Unknown action']);
 }
 
-function normalizeActivityName($s)
+/* ===================== HANDLERS ===================== */
+
+function handleUpdateWorkoutTitle(SqliteDb $db)
 {
-    $s = str_replace('_', ' ', (string)$s);
-    $s = trim($s);
-    $s = preg_replace('/\s+/', ' ', $s);
-    return $s;
+    $date  = normalizeDate($_POST['date'] ?? ($_GET['date'] ?? ''));
+    $title = trim($_POST['title'] ?? ($_GET['title'] ?? ''));
+
+    if ($date === '') jsonError('Missing date');
+
+    try {
+        $n = $db->query("
+            UPDATE workout_log
+            SET title = :t
+            WHERE wo_date = :d
+        ", [':t' => $title, ':d' => $date]);
+
+        jsonOk(['date' => $date, 'title' => $title, 'updated' => (int)$n]);
+    } catch (Throwable $ex) {
+        apiLog('handleUpdateWorkoutTitle ERROR: ' . $ex->getMessage(), 'ERROR');
+        jsonError('DB error: ' . $ex->getMessage(), 500);
+    }
 }
 
 function handleAddExercise(SqliteDb $db)
@@ -132,7 +146,25 @@ function handleAddExercise(SqliteDb $db)
     $title    = trim($_POST['title'] ?? '');
 
     if ($date === '' || $activity === '') jsonError('Missing date/activity');
-    if ($title === '') $title = ''; // se vuoi obbligatorio, fai jsonError('Missing title');
+    if ($title === '') $title = ''; 
+
+        // crea il "workout day" se non esiste
+    ensureWorkoutDay($db, $date);
+
+    // se arriva un titolo e quello del day è vuoto, lo settiamo
+    if ($title !== '') {
+        $db->query("
+            UPDATE workout_days
+            SET title = :t
+            WHERE wo_date = :d AND (title IS NULL OR title = '')
+        ", [':t' => $title, ':d' => $date]);
+    }
+
+    // titolo effettivo da usare sull'esercizio
+    $dayTitleRow = $db->queryDt("SELECT title FROM workout_days WHERE wo_date = :d LIMIT 1", [':d' => $date]);
+    $dayTitle = (string)($dayTitleRow[0]['title'] ?? '');
+    if ($dayTitle === '' && $title !== '') $dayTitle = $title;
+
 
     $id = newId();
 
@@ -456,6 +488,17 @@ function apiLog($msg, $level = 'INFO')
 }
 
 /* ===================== HELPERS ===================== */
+
+
+function normalizeActivityName($s)
+{
+    $s = str_replace('_', ' ', (string)$s);
+    $s = trim($s);
+    $s = preg_replace('/\s+/', ' ', $s);
+    return $s;
+}
+
+
 function isAbsolutePath($path)
 {
     $path = (string)$path;
