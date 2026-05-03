@@ -1,0 +1,16 @@
+CREATE TABLE workout_log (
+    id TEXT PRIMARY KEY,
+    wo_Date TEXT NOT NULL,          -- YYYY-MM-DD (data workout attuale)
+    origin_date TEXT NOT NULL,   -- YYYY-MM-DD (data di origine / clone)
+    title TEXT NOT NULL,         -- titolo workout del giorno
+    activity TEXT NOT NULL,      -- nome esercizio
+    pairs TEXT NOT NULL,         -- reps@peso attuali (stringa)
+    prev_pairs TEXT,              -- reps@peso precedenti (stringa)
+    activity_order INTEGER              -- ordine dell'esercizio 
+);
+
+CREATE TABLE workout_activies (
+    id int PRIMARY KEY,
+    activity TEXT NOT NULL,      -- nome esercizio
+    activity_type text not null                -- tipologia esercizio 
+);

@@ -1,2 +1,4 @@
 /backup/
 /web/data
+*.db
+*.csv
